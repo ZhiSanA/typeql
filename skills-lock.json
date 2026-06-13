@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "rslib-best-practices": {
+      "source": "rstackjs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/rslib-best-practices/SKILL.md",
+      "computedHash": "e51d235161c84260ed8987c508ddcb600f4dc31e8204e03853b524939f66c747"
+    }
+  }
+}

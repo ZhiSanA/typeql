@@ -1,0 +1,44 @@
+{
+  "name": "@jishu.xin/typeql",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rslib",
+    "dev": "rslib --watch",
+    "format": "prettier --write .",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@apollo/server": "^5.5.1",
+    "@eslint/js": "^10.0.1",
+    "@rslib/core": "^0.22.0",
+    "@types/node": "^24.12.4",
+    "@types/pluralize": "^0.0.33",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.1"
+  },
+  "private": true,
+  "dependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.10.0",
+    "graphql": "^16.14.2",
+    "graphql-scalars": "^1.25.0",
+    "pluralize": "^8.0.0",
+    "typeorm": "^1.0.0"
+  }
+}

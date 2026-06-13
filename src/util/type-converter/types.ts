@@ -1,0 +1,34 @@
+import type {
+  GraphQLEnumType,
+  GraphQLInputObjectType,
+  GraphQLList,
+  GraphQLNonNull,
+  GraphQLObjectType,
+  GraphQLScalarType,
+} from 'graphql';
+
+export type ConvertedColumn<TIsInput extends boolean = false> = {
+  type:
+    | GraphQLScalarType
+    | GraphQLEnumType
+    | GraphQLNonNull<GraphQLScalarType>
+    | GraphQLNonNull<GraphQLEnumType>
+    | GraphQLList<GraphQLScalarType>
+    | GraphQLList<GraphQLNonNull<GraphQLScalarType>>
+    | GraphQLNonNull<GraphQLList<GraphQLScalarType>>
+    | GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLScalarType>>>
+    | (TIsInput extends true
+        ?
+            | GraphQLInputObjectType
+            | GraphQLNonNull<GraphQLInputObjectType>
+            | GraphQLList<GraphQLInputObjectType>
+            | GraphQLNonNull<GraphQLList<GraphQLInputObjectType>>
+            | GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLInputObjectType>>>
+        :
+            | GraphQLObjectType
+            | GraphQLNonNull<GraphQLObjectType>
+            | GraphQLList<GraphQLObjectType>
+            | GraphQLNonNull<GraphQLList<GraphQLObjectType>>
+            | GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>);
+  description?: string;
+};
