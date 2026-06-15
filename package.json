@@ -1,6 +1,6 @@
 {
   "name": "@jishu.xin/typeql",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "type": "module",
   "exports": {
     ".": {
@@ -32,12 +32,12 @@
     "prettier": "^3.8.3",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.1"
+    "typescript-eslint": "^8.59.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.10.0"
   },
   "private": false,
   "dependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "better-sqlite3": "^12.10.0",
     "es-toolkit": "^1.47.1",
     "graphql": "^16.14.2",
     "graphql-scalars": "^1.25.0",
