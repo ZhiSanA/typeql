@@ -1,4 +1,4 @@
-# @jishu.xin/typeql
+# TypeQL
 
 Auto-generate GraphQL schema from TypeORM entities — inspired by [drizzle-graphql](https://github.com/vantreeseba/drizzle-graphql).
 

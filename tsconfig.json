@@ -1,6 +1,8 @@
 {
   "compilerOptions": {
     "lib": ["ES2022"],
+    "target": "ES2022",
+    "module": "ESNext",
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
@@ -9,12 +11,13 @@
     "useDefineForClassFields": true,
     "allowImportingTsExtensions": true,
     "experimentalDecorators": true,
-    "rootDir": "src",
-    "types": ["node"],
+    "emitDecoratorMetadata": true,
+    "strict": true,
     "declaration": true,
+    "types": ["node"],
     "paths": {
       "typeorm/metadata/*": ["./node_modules/typeorm/metadata/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "tool"]
 }
