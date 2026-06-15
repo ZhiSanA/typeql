@@ -7,7 +7,7 @@ import {
   GraphQLNonNull,
   GraphQLObjectType,
 } from 'graphql';
-import { getOrCreateLoader } from '../batch-loader/index.ts';
+import { getOrCreateLoader } from '../batch-loader';
 import { remapFromGraphQLArrayInput, remapFromGraphQLSingleInput, remapToGraphQLArrayOutput, remapToGraphQLSingleOutput } from '../data-mappers/index.ts';
 import type { BuildSchemaConfig } from '../../types.ts';
 import { type RelationMap, generateTypes, registerFieldResolver } from './common.ts';

@@ -1,19 +1,12 @@
 import { DataSource } from 'typeorm';
 import {
   type GraphQLFieldConfig,
-  type GraphQLInputObjectType,
-  type GraphQLObjectType,
-  GraphQLSchema,
   GraphQLObjectType as GQLObjectType,
+  GraphQLSchema,
 } from 'graphql';
-import type { BuildSchemaConfig, GeneratedData, GeneratedEntities } from './types.ts';
-import {
-  extractEntityMap,
-  buildRelationMap,
-  generateTypes,
-} from './util/builders/common.ts';
-import { resolveNames } from './util/builders/names.ts';
-import { generateResolvers } from './util/builders/resolvers.ts';
+import type { BuildSchemaConfig, GeneratedData } from './types.ts';
+import { buildRelationMap, generateTypes } from './builders/common.ts';
+import { generateResolvers } from './builders/resolvers.ts';
 
 export type {
   BuildSchemaConfig,
@@ -33,19 +26,30 @@ export const buildSchema = (
   config: BuildSchemaConfig = {},
 ): GeneratedData => {
   if (!dataSource.isInitialized) {
-    throw new Error('TypeQL Error: DataSource must be initialized before calling buildSchema()');
+    throw new Error(
+      'TypeQL Error: DataSource must be initialized before calling buildSchema()',
+    );
   }
 
   const entityMetadatas = config.entities
-    ? dataSource.entityMetadatas.filter((m) => config.entities!.includes(m.target as Function))
+    ? dataSource.entityMetadatas.filter((m) =>
+        config.entities!.includes(m.target as Function),
+      )
     : dataSource.entityMetadatas;
 
   if (entityMetadatas.length === 0) {
-    throw new Error('TypeQL Error: No entity metadatas found. Did you forget to add entities to the DataSource?');
+    throw new Error(
+      'TypeQL Error: No entity metadatas found. Did you forget to add entities to the DataSource?',
+    );
   }
 
-  const prefixes = { insert: 'create', update: 'update', delete: 'delete', ...config.prefixes };
-  const suffixes = { list: '', single: 'Single', ...config.suffixes };
+  const prefixes = {
+    insert: 'create',
+    update: 'update',
+    delete: 'delete',
+    ...config.prefixes,
+  };
+  const suffixes = { list: '', single: '', ...config.suffixes };
   const typeNameMapper = config.typeNameMapper;
 
   if (!typeNameMapper && suffixes.list === suffixes.single) {
@@ -62,7 +66,12 @@ export const buildSchema = (
   const relationMap = buildRelationMap(entityMetadatas);
 
   // Generate types
-  const typeOutputs = generateTypes(entityMetadatas, entityMap, relationMap, config);
+  const typeOutputs = generateTypes(
+    entityMetadatas,
+    entityMap,
+    relationMap,
+    config,
+  );
 
   // Generate resolvers
   const { queries, mutations, fieldResolvers } = generateResolvers(

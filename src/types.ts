@@ -4,7 +4,6 @@ import type {
   GraphQLObjectType,
   GraphQLSchema,
 } from 'graphql';
-import type { DataSource } from 'typeorm';
 
 // ──────────────────────────────────────────────
 // Core return types
@@ -22,7 +21,10 @@ export interface GeneratedEntities {
   types: Record<string, GraphQLObjectType>;
   fieldResolvers: Record<
     string,
-    Record<string, (source: any, args: any, context: any, info: any) => Promise<any>>
+    Record<
+      string,
+      (source: any, args: any, context: any, info: any) => Promise<any>
+    >
   >;
 }
 

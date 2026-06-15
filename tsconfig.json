@@ -8,6 +8,7 @@
     "moduleResolution": "bundler",
     "useDefineForClassFields": true,
     "allowImportingTsExtensions": true,
+    "experimentalDecorators": true,
     "rootDir": "src",
     "types": ["node"],
     "declaration": true,
