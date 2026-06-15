@@ -7,11 +7,10 @@ import {
   GraphQLNonNull,
   GraphQLObjectType,
 } from 'graphql';
-import { getOrCreateLoader } from '../batch-loader';
+import { getOrCreateLoader } from '../batch-loader/index.ts';
 import { remapFromGraphQLArrayInput, remapFromGraphQLSingleInput, remapToGraphQLArrayOutput, remapToGraphQLSingleOutput } from '../data-mappers/index.ts';
-import type { BuildSchemaConfig } from '../../types.ts';
 import { type RelationMap, generateTypes, registerFieldResolver } from './common.ts';
-import { resolveNames } from './names.ts';
+import { resolveNames, type TypeNameMapper } from './names.ts';
 
 // ──────────────────────────────────────────────
 // Filter conversion: GraphQL filter → TypeORM FindOptionsWhere
@@ -90,22 +89,20 @@ export function generateResolvers(
   dataSource: DataSource,
   entityMetadatas: EntityMetadata[],
   relationMap: RelationMap,
-  config: BuildSchemaConfig,
+  typeNameMapper: TypeNameMapper,
   typeOutputs: ReturnType<typeof generateTypes>,
 ): {
   queries: Record<string, any>;
   mutations: Record<string, any>;
   fieldResolvers: Record<string, Record<string, (...args: any[]) => Promise<any>>>;
 } {
-  const prefixes = { insert: 'create', update: 'update', delete: 'delete', ...config.prefixes };
-  const suffixes = { list: '', single: 'Single', ...config.suffixes };
   const queries: Record<string, any> = {};
   const mutations: Record<string, any> = {};
   const fieldResolvers: Record<string, Record<string, (...args: any[]) => Promise<any>>> = {};
 
   for (const meta of entityMetadatas) {
     const entityName = meta.targetName;
-    const names = resolveNames(entityName, prefixes, suffixes, config.typeNameMapper);
+    const names = resolveNames(entityName, typeNameMapper);
     const typeName = names.typeName;
     const selectType = typeOutputs.types[typeName];
     if (!selectType) continue;

@@ -17,7 +17,6 @@ import { GraphQLDate, GraphQLDateTime } from 'graphql-scalars';
 import { capitalize, uncapitalize } from '../case-ops/index.ts';
 import { typeormColumnToGraphQLType } from '../type-converter/index.ts';
 import type { ConvertedColumn } from '../type-converter/types.ts';
-import type { BuildSchemaConfig } from '../../types.ts';
 import { resolveNames, type TypeNameMapper } from './names.ts';
 
 // ──────────────────────────────────────────────
@@ -207,7 +206,7 @@ function buildOrGetType(
   meta: EntityMetadata,
   entityMap: Record<string, EntityMetadata>,
   relationMap: RelationMap,
-  config: BuildSchemaConfig,
+  typeNameMapper: TypeNameMapper,
 ): GraphQLObjectType {
   if (typeCache.has(typeName)) {
     return typeCache.get(typeName)!;
@@ -230,10 +229,8 @@ function buildOrGetType(
         const info = relInfo as RelationInfo;
         const targetMeta = entityMap[info.targetEntityName];
         if (!targetMeta) continue;
-        const prefixes = { insert: 'create', update: 'update', delete: 'delete', ...config.prefixes };
-        const suffixes = { list: '', single: 'Single', ...config.suffixes };
-        const targetNames = resolveNames(info.targetEntityName, prefixes, suffixes, config.typeNameMapper);
-        const targetType = buildOrGetType(targetNames.typeName, targetMeta, entityMap, relationMap, config);
+        const targetNames = resolveNames(info.targetEntityName, typeNameMapper);
+        const targetType = buildOrGetType(targetNames.typeName, targetMeta, entityMap, relationMap, typeNameMapper);
         const resolverKey = `${meta.targetName}.${relName}`;
         const fieldResolver = relationResolvers.get(resolverKey);
         if (info.isOne) {
@@ -262,7 +259,7 @@ export function buildTableTypes(
   meta: EntityMetadata,
   entityMap: Record<string, EntityMetadata>,
   relationMap: RelationMap,
-  config: BuildSchemaConfig,
+  typeNameMapper: TypeNameMapper,
   names: { typeName: string },
 ): EntityTypeBundle & { relationFields: Record<string, ConvertedColumn> } {
   const entityName = meta.targetName;
@@ -271,7 +268,7 @@ export function buildTableTypes(
   const classifyFn = classifyColumn(meta);
 
   // Output type (via cache to handle circular refs)
-  const outputType = buildOrGetType(typeName, meta, entityMap, relationMap, config);
+  const outputType = buildOrGetType(typeName, meta, entityMap, relationMap, typeNameMapper);
 
   // ── Insert input ──
   const insertFields: Record<string, any> = {};
@@ -374,7 +371,7 @@ export function generateTypes(
   entityMetadatas: EntityMetadata[],
   entityMap: Record<string, EntityMetadata>,
   relationMap: RelationMap,
-  config: BuildSchemaConfig,
+  typeNameMapper: TypeNameMapper,
 ): {
   types: Record<string, GraphQLObjectType>;
   inputs: Record<string, GraphQLInputObjectType>;
@@ -383,8 +380,6 @@ export function generateTypes(
   insertInputs: Record<string, GraphQLInputObjectType>;
   updateInputs: Record<string, GraphQLInputObjectType>;
 } {
-  const prefixes = { insert: 'create', update: 'update', delete: 'delete', ...config.prefixes };
-  const suffixes = { list: '', single: 'Single', ...config.suffixes };
   const types: Record<string, GraphQLObjectType> = {};
   const inputs: Record<string, GraphQLInputObjectType> = {};
   const filters: Record<string, GraphQLInputObjectType> = {};
@@ -393,8 +388,8 @@ export function generateTypes(
   const updateInputs: Record<string, GraphQLInputObjectType> = {};
 
   for (const meta of entityMetadatas) {
-    const names = resolveNames(meta.targetName, prefixes, suffixes, config.typeNameMapper);
-    const bundle = buildTableTypes(meta, entityMap, relationMap, config, names);
+    const names = resolveNames(meta.targetName, typeNameMapper);
+    const bundle = buildTableTypes(meta, entityMap, relationMap, typeNameMapper, names);
     types[names.typeName] = bundle.outputType;
     insertInputs[meta.targetName] = bundle.insertInput;
     updateInputs[meta.targetName] = bundle.updateInput;

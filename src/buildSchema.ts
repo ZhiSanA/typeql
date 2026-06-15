@@ -4,9 +4,11 @@ import {
   GraphQLObjectType as GQLObjectType,
   GraphQLSchema,
 } from 'graphql';
+import pluralize from 'pluralize';
 import type { BuildSchemaConfig, GeneratedData } from './types.ts';
 import { buildRelationMap, generateTypes } from './builders/common.ts';
 import { generateResolvers } from './builders/resolvers.ts';
+import { lowerFirst } from 'es-toolkit';
 
 export type {
   BuildSchemaConfig,
@@ -43,20 +45,18 @@ export const buildSchema = (
     );
   }
 
-  const prefixes = {
-    insert: 'create',
-    update: 'update',
-    delete: 'delete',
-    ...config.prefixes,
-  };
-  const suffixes = { list: '', single: '', ...config.suffixes };
-  const typeNameMapper = config.typeNameMapper;
-
-  if (!typeNameMapper && suffixes.list === suffixes.single) {
-    throw new Error(
-      'TypeQL Error: List and single query suffixes cannot be the same. This would create conflicting GraphQL field names.',
-    );
-  }
+  // Default typeNameMapper uses pluralize for automatic singular/plural
+  const typeNameMapper =
+    config.typeNameMapper ??
+    ((name: string) => {
+      // -
+      name = lowerFirst(name);
+      // -
+      return {
+        singular: name,
+        plural: pluralize.plural(name),
+      };
+    });
 
   // Build entity and relation maps
   const entityMap: Record<string, any> = {};
@@ -70,7 +70,7 @@ export const buildSchema = (
     entityMetadatas,
     entityMap,
     relationMap,
-    config,
+    typeNameMapper,
   );
 
   // Generate resolvers
@@ -78,7 +78,7 @@ export const buildSchema = (
     dataSource,
     entityMetadatas,
     relationMap,
-    config,
+    typeNameMapper,
     typeOutputs,
   );
 

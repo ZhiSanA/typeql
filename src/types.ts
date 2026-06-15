@@ -46,27 +46,10 @@ export interface BuildSchemaConfig {
   mutations?: boolean;
 
   /**
-   * Prefixes for mutation field names.
-   * Default: { insert: 'create', update: 'update', delete: 'delete' }
-   */
-  prefixes?: {
-    insert?: string;
-    update?: string;
-    delete?: string;
-  };
-
-  /**
-   * Suffixes for query field names.
-   * Default: { list: '', single: 'Single' }
-   */
-  suffixes?: {
-    list?: string;
-    single?: string;
-  };
-
-  /**
    * Custom name mapper: entity name → singular/plural pair.
-   * Return `undefined` for tables that should use default naming.
+   * Default uses pluralize internally:
+   *   (name) => ({ singular: pluralize.singular(name), plural: pluralize.plural(name) })
+   * Return `undefined` for a specific entity to fall back to the default behavior.
    */
   typeNameMapper?: (
     entityName: string,
@@ -77,18 +60,6 @@ export interface BuildSchemaConfig {
    * 0 = no relation fields. undefined = unlimited.
    */
   relationsDepthLimit?: number;
-
-  /**
-   * Whether to use GraphQLID for primary key columns.
-   * Default: false (uses String for bigint/string PKs, Int for int PKs)
-   */
-  useGraphQLID?: boolean;
-
-  /**
-   * Custom column type overrides: keyed as "EntityName.columnName"
-   * Maps to GraphQL scalar type name string.
-   */
-  columnTypeOverrides?: Record<string, string>;
 }
 
 // ──────────────────────────────────────────────

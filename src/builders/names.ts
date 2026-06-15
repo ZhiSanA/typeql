@@ -16,20 +16,16 @@ export interface ResolvedNames {
 
 export function resolveNames(
   entityName: string,
-  prefixes: { insert: string; update: string; delete: string },
-  suffixes: { list: string; single: string },
   typeNameMapper?: TypeNameMapper,
 ): ResolvedNames {
   const mapped = typeNameMapper?.(entityName);
   const typeName = mapped ? capitalize(mapped.singular) : capitalize(entityName);
-  const listFieldName = (mapped?.plural ?? uncapitalize(entityName)) + suffixes.list;
-  const singleFieldName = mapped?.singular ?? uncapitalize(entityName) + suffixes.single;
-  const createArrayFieldName = `${prefixes.insert}${mapped ? capitalize(mapped.plural) : capitalize(entityName)}`;
-  const createSingleFieldName = mapped
-    ? `${prefixes.insert}${capitalize(mapped.singular)}`
-    : `${prefixes.insert}${capitalize(entityName)}${suffixes.single}`;
-  const updateFieldName = `${prefixes.update}${mapped ? capitalize(mapped.singular) : capitalize(entityName)}`;
-  const deleteFieldName = `${prefixes.delete}${mapped ? capitalize(mapped.singular) : capitalize(entityName)}`;
+  const listFieldName = mapped?.plural ?? uncapitalize(entityName);
+  const singleFieldName = mapped?.singular ?? uncapitalize(entityName);
+  const createArrayFieldName = `create${mapped ? capitalize(mapped.plural) : capitalize(entityName)}`;
+  const createSingleFieldName = `create${mapped ? capitalize(mapped.singular) : capitalize(entityName)}`;
+  const updateFieldName = `update${mapped ? capitalize(mapped.singular) : capitalize(entityName)}`;
+  const deleteFieldName = `delete${mapped ? capitalize(mapped.singular) : capitalize(entityName)}`;
 
   return {
     typeName,

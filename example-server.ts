@@ -9,7 +9,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { buildSchema } from './dist/index.js';
+import { buildSchema } from './src';
 import { ApolloServer } from '@apollo/server';
 import { startStandaloneServer } from '@apollo/server/standalone';
 
@@ -96,7 +96,7 @@ console.log('Mutations:', Object.keys(entities.mutations).join(', '));
 const server = new ApolloServer({ schema });
 
 const { url } = await startStandaloneServer(server, {
-  listen: { port: 8000 },
+  listen: { port: 1216 },
 });
 
 console.log(`\n🚀 Server ready at ${url}`);

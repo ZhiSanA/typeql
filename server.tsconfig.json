@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "strict": true
   },
-  "include": ["server.ts", "debug.ts"]
+  "include": ["example-server.ts"]
 }
