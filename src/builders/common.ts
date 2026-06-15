@@ -193,6 +193,19 @@ export function registerFieldResolver(
   relationResolvers.set(`${entityName}.${relName}`, resolver);
 }
 
+// ── Relation filter/order cache for field arguments ──
+export const relationFilterCache = new Map<string, GraphQLInputObjectType>();
+export const relationOrderCache = new Map<string, GraphQLInputObjectType>();
+
+// ── DeleteResult type ──
+export const deleteResultType = new GraphQLObjectType({
+  name: 'DeleteResult',
+  fields: {
+    affected: { type: new GraphQLNonNull(GraphQLInt) },
+    raw: { type: new GraphQLList(new GraphQLNonNull(GraphQLString)) },
+  },
+});
+
 // ──────────────────────────────────────────────
 // Type cache — one GraphQLObjectType per typeName
 // Fields are deferred via thunks, so circular refs work.
@@ -310,6 +323,31 @@ export function buildTableTypes(
     }
     filterFields[col.propertyName] = { type: filterType };
   }
+
+  // ── Relation filter fields ──
+  const rels = relationMap[entityName] ?? {};
+  const visitedEntities = new Set<string>([entityName]);
+  for (const [relName, relInfo] of Object.entries(rels)) {
+    const targetEntityName = relInfo.targetEntityName;
+    if (visitedEntities.has(targetEntityName)) continue;
+    visitedEntities.add(targetEntityName);
+    const targetMeta = entityMap[targetEntityName];
+    if (!targetMeta) { visitedEntities.delete(targetEntityName); continue; }
+    const subFilter = generateRelationFilter(
+      `${typeName}_${relName}`,
+      targetMeta,
+      entityMap,
+      relationMap,
+      visitedEntities,
+      2, // default depth limit — TODO: make configurable later
+      0,
+    );
+    visitedEntities.delete(targetEntityName);
+    if (subFilter) {
+      filterFields[relName] = { type: subFilter };
+    }
+  }
+
   const filterInput = new GraphQLInputObjectType({
     name: `${typeName}Filter`,
     fields: () => {
@@ -320,6 +358,7 @@ export function buildTableTypes(
       return { ...filterFields, or: { type: new GraphQLList(new GraphQLNonNull(orType)) } };
     },
   });
+  relationFilterCache.set(entityName, filterInput);
 
   // ── Order input ──
   const orderFields: Record<string, any> = {};
@@ -342,6 +381,7 @@ export function buildTableTypes(
     name: `${typeName}OrderBy`,
     fields: orderFields,
   });
+  relationOrderCache.set(entityName, orderInput);
 
   return { outputType, insertInput, updateInput, filterInput, orderInput, relationFields: {} };
 }
@@ -359,6 +399,75 @@ function makeEnumFilter(col: any, entityName: string): GraphQLInputObjectType {
       notIn: { type: new GraphQLList(new GraphQLNonNull(enumGqlType)) },
       isNull: { type: GraphQLBoolean },
       isNotNull: { type: GraphQLBoolean },
+    },
+  });
+}
+
+// ── Recursive relation filter generator ──
+function generateRelationFilter(
+  entityName: string,
+  meta: EntityMetadata,
+  entityMap: Record<string, EntityMetadata>,
+  relationMap: RelationMap,
+  visitedEntities: Set<string>,
+  depthLimit: number,
+  currentDepth: number,
+): GraphQLInputObjectType | null {
+  // Guard: depth limit
+  if (currentDepth > depthLimit) return null;
+
+  const filterName = `${entityName}_RelationFilter`;
+  const classifyFn = classifyColumn(meta);
+  const columns = meta.ownColumns;
+
+  // Build scalar filter fields
+  const filterFields: Record<string, any> = {};
+  for (const col of columns) {
+    const cat = classifyFn(col.propertyName);
+    let filterType: GraphQLInputObjectType;
+    switch (cat) {
+      case 'float': filterType = getOrCreateSharedFilter('Float', floatFilterFields); break;
+      case 'boolean': filterType = getOrCreateSharedFilter('Boolean', booleanFilterFields); break;
+      case 'date': filterType = getOrCreateSharedFilter('Date', dateFilterFields); break;
+      case 'datetime': filterType = getOrCreateSharedFilter('DateTime', dateTimeFilterFields); break;
+      case 'enum': filterType = makeEnumFilter(col, entityName); break;
+      case 'int': filterType = getOrCreateSharedFilter('Int', intFilterFields); break;
+      default: filterType = getOrCreateSharedFilter('String', stringFilterFields);
+    }
+    filterFields[col.propertyName] = { type: filterType };
+  }
+
+  // Build relation filter fields (recursive with cycle guard)
+  const rels = relationMap[entityName] ?? {};
+  for (const [relName, relInfo] of Object.entries(rels)) {
+    const targetEntityName = relInfo.targetEntityName;
+    if (visitedEntities.has(targetEntityName)) continue;
+    visitedEntities.add(targetEntityName);
+    const targetMeta = entityMap[targetEntityName];
+    if (!targetMeta) { visitedEntities.delete(targetEntityName); continue; }
+    const subFilter = generateRelationFilter(
+      `${entityName}_${relName}`,
+      targetMeta,
+      entityMap,
+      relationMap,
+      visitedEntities,
+      depthLimit,
+      currentDepth + 1,
+    );
+    visitedEntities.delete(targetEntityName);
+    if (subFilter) {
+      filterFields[relName] = { type: subFilter };
+    }
+  }
+
+  return new GraphQLInputObjectType({
+    name: filterName,
+    fields: () => {
+      const orType = new GraphQLInputObjectType({
+        name: `${filterName}_Or`,
+        fields: () => ({ ...filterFields }),
+      });
+      return { ...filterFields, or: { type: new GraphQLList(new GraphQLNonNull(orType)) } };
     },
   });
 }
