@@ -430,7 +430,7 @@ function generateRelationFilter(
       case 'boolean': filterType = getOrCreateSharedFilter('Boolean', booleanFilterFields); break;
       case 'date': filterType = getOrCreateSharedFilter('Date', dateFilterFields); break;
       case 'datetime': filterType = getOrCreateSharedFilter('DateTime', dateTimeFilterFields); break;
-      case 'enum': filterType = makeEnumFilter(col, entityName); break;
+      case 'enum': filterType = makeEnumFilter(col, meta.targetName); break;
       case 'int': filterType = getOrCreateSharedFilter('Int', intFilterFields); break;
       default: filterType = getOrCreateSharedFilter('String', stringFilterFields);
     }
@@ -438,7 +438,7 @@ function generateRelationFilter(
   }
 
   // Build relation filter fields (recursive with cycle guard)
-  const rels = relationMap[entityName] ?? {};
+  const rels = relationMap[meta.targetName] ?? {};
   for (const [relName, relInfo] of Object.entries(rels)) {
     const targetEntityName = relInfo.targetEntityName;
     if (visitedEntities.has(targetEntityName)) continue;
