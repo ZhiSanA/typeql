@@ -71,6 +71,7 @@ export const buildSchema = (
     entityMap,
     relationMap,
     typeNameMapper,
+    config.maxRelationDepth ?? 2,
   );
 
   // Generate resolvers

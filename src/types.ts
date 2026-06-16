@@ -60,6 +60,13 @@ export interface BuildSchemaConfig {
    * 0 = no relation fields. undefined = unlimited.
    */
   relationsDepthLimit?: number;
+
+  /**
+   * Maximum depth for relation filter generation in nested where queries.
+   * Default: 2 (e.g., article -> author -> profile)
+   * Set to 0 to disable nested relation filtering entirely.
+   */
+  maxRelationDepth?: number;
 }
 
 // ──────────────────────────────────────────────

@@ -286,6 +286,7 @@ export function buildTableTypes(
   relationMap: RelationMap,
   typeNameMapper: TypeNameMapper,
   names: { typeName: string },
+  relationDepth = 2,
 ): EntityTypeBundle & { relationFields: Record<string, ConvertedColumn> } {
   const entityName = meta.targetName;
   const typeName = names.typeName;
@@ -338,25 +339,27 @@ export function buildTableTypes(
 
   // ── Relation filter fields ──
   const rels = relationMap[entityName] ?? {};
-  const visitedEntities = new Set<string>([entityName]);
-  for (const [relName, relInfo] of Object.entries(rels)) {
-    const targetEntityName = relInfo.targetEntityName;
-    if (visitedEntities.has(targetEntityName)) continue;
-    visitedEntities.add(targetEntityName);
-    const targetMeta = entityMap[targetEntityName];
-    if (!targetMeta) { visitedEntities.delete(targetEntityName); continue; }
-    const subFilter = generateRelationFilter(
-      `${typeName}_${relName}`,
-      targetMeta,
-      entityMap,
-      relationMap,
-      visitedEntities,
-      2, // default depth limit — TODO: make configurable later
-      0,
-    );
-    visitedEntities.delete(targetEntityName);
-    if (subFilter) {
-      filterFields[relName] = { type: subFilter };
+  if (relationDepth > 0) {
+    const visitedEntities = new Set<string>([entityName]);
+    for (const [relName, relInfo] of Object.entries(rels)) {
+      const targetEntityName = relInfo.targetEntityName;
+      if (visitedEntities.has(targetEntityName)) continue;
+      visitedEntities.add(targetEntityName);
+      const targetMeta = entityMap[targetEntityName];
+      if (!targetMeta) { visitedEntities.delete(targetEntityName); continue; }
+      const subFilter = generateRelationFilter(
+        `${typeName}_${relName}`,
+        targetMeta,
+        entityMap,
+        relationMap,
+        visitedEntities,
+        relationDepth,
+        0,
+      );
+      visitedEntities.delete(targetEntityName);
+      if (subFilter) {
+        filterFields[relName] = { type: subFilter };
+      }
     }
   }
 
@@ -493,6 +496,7 @@ export function generateTypes(
   entityMap: Record<string, EntityMetadata>,
   relationMap: RelationMap,
   typeNameMapper: TypeNameMapper,
+  relationDepth = 2,
 ): {
   types: Record<string, GraphQLObjectType>;
   inputs: Record<string, GraphQLInputObjectType>;
@@ -510,7 +514,7 @@ export function generateTypes(
 
   for (const meta of entityMetadatas) {
     const names = resolveNames(meta.targetName, typeNameMapper);
-    const bundle = buildTableTypes(meta, entityMap, relationMap, typeNameMapper, names);
+    const bundle = buildTableTypes(meta, entityMap, relationMap, typeNameMapper, names, relationDepth);
     types[names.typeName] = bundle.outputType;
     insertInputs[meta.targetName] = bundle.insertInput;
     updateInputs[meta.targetName] = bundle.updateInput;
