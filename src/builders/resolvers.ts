@@ -20,26 +20,27 @@ function resolveWhere(
   argsWhere: any,
   meta: EntityMetadata,
   relationMap: RelationMap,
-): { where: Record<string, any> | undefined; relations: string[] } {
-  if (!argsWhere) return { where: undefined as any, relations: [] };
+): { where: Record<string, any> | Record<string, any>[] | undefined; relations: string[] } {
+  if (!argsWhere) return { where: undefined, relations: [] };
 
   const columns = meta.ownColumns;
   const result: Record<string, any> = {};
   const relations: string[] = [];
 
-  // Handle OR conditions
+  // Extract OR conditions (TypeORM uses array syntax: where: [clause1, clause2])
+  let orClauses: Record<string, any>[] | undefined;
   if (argsWhere.or || argsWhere.OR) {
     const orKey = argsWhere.or ? 'or' : 'OR';
     const orParts = argsWhere[orKey] as any[];
     if (orParts?.length) {
-      result[orKey] = orParts
+      orClauses = orParts
         .map((w: any) => resolveWhere(w, meta, relationMap))
-        .filter(r => r.where != null)
+        .filter(r => r.where != null && !Array.isArray(r.where))
         .map(r => {
           relations.push(...r.relations);
-          return r.where;
+          return r.where as Record<string, any>;
         });
-      if (result[orKey].length === 0) delete result[orKey];
+      if (orClauses.length === 0) orClauses = undefined;
     }
   }
 
@@ -92,8 +93,39 @@ function resolveWhere(
     }
   }
 
-  const where = Object.keys(result).length > 0 ? result : undefined;
-  return { where, relations };
+  // If OR conditions exist, return as array (TypeORM array = OR semantics)
+  const simpleWhere = Object.keys(result).length > 0 ? result : undefined;
+  if (orClauses && orClauses.length > 0) {
+    const finalWhere = simpleWhere ? [simpleWhere, ...orClauses] : orClauses;
+    return { where: finalWhere, relations };
+  }
+
+  return { where: simpleWhere, relations };
+}
+
+/**
+ * Convert a flat relation path array to TypeORM's nested object format.
+ * ['author', 'author.profile'] → { author: { profile: true } }
+ */
+function buildRelationObject(paths: string[]): Record<string, any> | undefined {
+  if (!paths.length) return undefined;
+  const result: Record<string, any> = {};
+  for (const path of paths) {
+    const parts = path.split('.');
+    let current = result;
+    for (let i = 0; i < parts.length; i++) {
+      if (i === parts.length - 1) {
+        current[parts[i]!] = true;
+      } else {
+        const existing = current[parts[i]!];
+        if (typeof existing !== 'object' || existing === null || existing === true) {
+          current[parts[i]!] = {};
+        }
+        current = current[parts[i]!];
+      }
+    }
+  }
+  return result;
 }
 
 function convertOrderBy(
@@ -202,7 +234,7 @@ function makeList(ds: DataSource, meta: EntityMetadata, listType: any, fi?: Grap
       const resolved = resolveWhere(args['where'], meta, relationMap!);
       return remapToGraphQLArrayOutput(await repo.find({
         where: resolved.where as any,
-        relations: resolved.relations.length > 0 ? resolved.relations : undefined as any,
+        relations: buildRelationObject(resolved.relations) as any,
         order: convertOrderBy(args['orderBy']) as any,
         skip: args['offset'] ?? undefined,
         take: args['limit'] ?? undefined,
@@ -221,7 +253,7 @@ function makeSingle(ds: DataSource, meta: EntityMetadata, st: GraphQLObjectType,
       const resolved = resolveWhere(args['where'], meta, relationMap!);
       const result = await repo.findOne({
         where: resolved.where as any,
-        relations: resolved.relations.length > 0 ? resolved.relations : undefined as any,
+        relations: buildRelationObject(resolved.relations) as any,
         order: convertOrderBy(args['orderBy']) as any,
       } as any);
       if (!result) return null;
@@ -380,16 +412,25 @@ function createRelationResolver(
       if (!jt || !jc || !tpk) return [];
 
       if (hasArgs) {
-        // With args: use find() for parameter support instead of QueryBuilder
-        const whereClause = resolvedWhere
-          ? { ...resolvedWhere, [tpk]: pkValue }
-          : { [tpk]: pkValue } as any;
-        return targetRepo.find({
-          where: whereClause,
-          order: order as any,
-          take,
-          skip,
-        });
+        // With args: use QueryBuilder with junction table join + additional filters
+        let query = targetRepo.createQueryBuilder('t')
+          .innerJoin(jt, 'j', `"j"."${tpk}" = "t"."${tpk}"`)
+          .where(`"j"."${jc}" = :pkValue`, { pkValue });
+        if (resolvedWhere) {
+          // Apply additional where clauses via andWhere
+          // For each key in resolvedWhere, add as AND condition
+          for (const [whereKey, whereVal] of Object.entries(resolvedWhere)) {
+            query = query.andWhere(`"t"."${whereKey}" = :${whereKey}`, { [whereKey]: whereVal });
+          }
+        }
+        if (order) {
+          for (const [orderKey, orderDir] of Object.entries(order)) {
+            query = query.addOrderBy(`"t"."${orderKey}"`, orderDir);
+          }
+        }
+        if (take) query = query.take(take);
+        if (skip) query = query.skip(skip);
+        return query.getMany();
       }
 
       // No args: use QueryBuilder with junction table join (same as before)
@@ -401,13 +442,18 @@ function createRelationResolver(
 
     if (relInfo.isOwning) {
       // ManyToOne — single entity, ignore args, keep batch loader
+      // (relationMap is unused for ManyToOne; only needed for OneToMany/MTM)
+      if (hasArgs) {
+        // ManyToOne with args is unsupported (single entity)
+        // Fall through to batch loader — args are silently ignored for singular relations
+      }
       const fkValue = fkPropertyName ? source[fkPropertyName] : undefined;
       if (fkValue == null) return null;
       const targetPkName = targetPk?.propertyName;
       if (!targetPkName) return null;
 
       const loader = getOrCreateLoader(
-        `${meta.targetName}::${propertyName}`,
+        context,
         `${meta.targetName}::${propertyName}`,
         async (keys: readonly any[]) => {
           const unique = [...new Set(keys)];
@@ -437,7 +483,7 @@ function createRelationResolver(
 
       // Batch loaded (no args) — same as before
       const loader = getOrCreateLoader(
-        `${meta.targetName}::${propertyName}`,
+        context,
         `${meta.targetName}::${propertyName}`,
         async (keys: readonly any[]) => {
           const unique = [...new Set(keys)];
