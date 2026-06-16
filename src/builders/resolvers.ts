@@ -9,52 +9,91 @@ import {
 } from 'graphql';
 import { getOrCreateLoader } from '../batch-loader/index.ts';
 import { remapFromGraphQLArrayInput, remapFromGraphQLSingleInput, remapToGraphQLArrayOutput, remapToGraphQLSingleOutput } from '../data-mappers/index.ts';
-import { type RelationMap, generateTypes, registerFieldResolver } from './common.ts';
+import { type RelationMap, generateTypes, registerFieldResolver, deleteResultType } from './common.ts';
 import { resolveNames, type TypeNameMapper } from './names.ts';
 
 // ──────────────────────────────────────────────
 // Filter conversion: GraphQL filter → TypeORM FindOptionsWhere
 // ──────────────────────────────────────────────
 
-function convertFilters(
-  where: Record<string, any> | undefined,
-  columns: EntityMetadata['ownColumns'],
-): Record<string, any> | undefined {
-  if (!where) return undefined;
+function resolveWhere(
+  argsWhere: any,
+  meta: EntityMetadata,
+  relationMap: RelationMap,
+): { where: Record<string, any> | undefined; relations: string[] } {
+  if (!argsWhere) return { where: undefined as any, relations: [] };
+
+  const columns = meta.ownColumns;
   const result: Record<string, any> = {};
+  const relations: string[] = [];
 
-  for (const [key, value] of Object.entries(where)) {
+  // Handle OR conditions
+  if (argsWhere.or || argsWhere.OR) {
+    const orKey = argsWhere.or ? 'or' : 'OR';
+    const orParts = argsWhere[orKey] as any[];
+    if (orParts?.length) {
+      result[orKey] = orParts
+        .map((w: any) => resolveWhere(w, meta, relationMap))
+        .filter(r => r.where != null)
+        .map(r => {
+          relations.push(...r.relations);
+          return r.where;
+        });
+      if (result[orKey].length === 0) delete result[orKey];
+    }
+  }
+
+  for (const [key, value] of Object.entries(argsWhere)) {
     if (key === 'or' || key === 'OR') continue;
-    if (value == null || typeof value !== 'object') continue;
+    if (value == null) continue;
 
-    const col = columns.find((c: any) => c.propertyName === key);
-    if (!col) continue;
+    // Check if this is a relation key
+    const relInfo = relationMap[meta.targetName]?.[key];
+    if (relInfo) {
+      // Relation filter — recursively resolve
+      const targetMeta = relInfo.relation.inverseEntityMetadata;
+      const sub = resolveWhere(value as any, targetMeta, relationMap);
+      if (sub.where) {
+        result[key] = sub.where;
+        relations.push(key);
+        // Add nested relation paths
+        relations.push(...sub.relations.map((r: string) => `${key}.${r}`));
+      }
+      continue;
+    }
 
-    for (const [op, val] of Object.entries(value)) {
-      if (val === undefined || val === null) continue;
-      switch (op) {
-        case 'eq': result[key] = val; break;
-        case 'ne': result[key] = Not(val); break;
-        case 'lt': result[key] = LessThan(val); break;
-        case 'lte': result[key] = LessThanOrEqual(val); break;
-        case 'gt': result[key] = MoreThan(val); break;
-        case 'gte': result[key] = MoreThanOrEqual(val); break;
-        case 'like': result[key] = Like(val); break;
-        case 'notLike': result[key] = Not(Like(val)); break;
-        case 'ilike': result[key] = Like(val); break;
-        case 'notIlike': result[key] = Not(Like(val)); break;
-        case 'inArray': case 'in':
-          result[key] = In(Array.isArray(val) ? val : [val]); break;
-        case 'notInArray': case 'notIn':
-          result[key] = Not(In(Array.isArray(val) ? val : [val])); break;
-        case 'isNull':
-          result[key] = IsNull(); break;
-        case 'isNotNull':
-          result[key] = Not(IsNull()); break;
+    // ownColumn filter with operators
+    if (typeof value === 'object' && value !== null) {
+      const col = columns.find((c: any) => c.propertyName === key);
+      if (!col) continue;
+      for (const [op, val] of Object.entries(value as Record<string, any>)) {
+        if (val === undefined || val === null) continue;
+        switch (op) {
+          case 'eq': result[key] = val; break;
+          case 'ne': result[key] = Not(val); break;
+          case 'lt': result[key] = LessThan(val); break;
+          case 'lte': result[key] = LessThanOrEqual(val); break;
+          case 'gt': result[key] = MoreThan(val); break;
+          case 'gte': result[key] = MoreThanOrEqual(val); break;
+          case 'like': result[key] = Like(val); break;
+          case 'notLike': result[key] = Not(Like(val)); break;
+          case 'ilike': result[key] = Like(val); break;
+          case 'notIlike': result[key] = Not(Like(val)); break;
+          case 'inArray': case 'in':
+            result[key] = In(Array.isArray(val) ? val : [val]); break;
+          case 'notInArray': case 'notIn':
+            result[key] = Not(In(Array.isArray(val) ? val : [val])); break;
+          case 'isNull':
+            result[key] = IsNull(); break;
+          case 'isNotNull':
+            result[key] = Not(IsNull()); break;
+        }
       }
     }
   }
-  return Object.keys(result).length > 0 ? result : undefined;
+
+  const where = Object.keys(result).length > 0 ? result : undefined;
+  return { where, relations };
 }
 
 function convertOrderBy(
@@ -68,17 +107,6 @@ function convertOrderBy(
   const result: Record<string, 'ASC' | 'DESC'> = {};
   for (const [key, val] of entries) result[key] = val!.direction === 'desc' ? 'DESC' : 'ASC';
   return result;
-}
-
-function resolveWhere(argsWhere: any, columns: EntityMetadata['ownColumns']): any {
-  const simple = convertFilters(argsWhere, columns);
-  const orParts = argsWhere?.or as any[];
-  if (orParts?.length) {
-    const orClauses = orParts.map((w: any) => convertFilters(w, columns)).filter(Boolean);
-    if (simple) return [simple, ...orClauses];
-    return orClauses.length > 0 ? orClauses : undefined;
-  }
-  return simple;
 }
 
 // ──────────────────────────────────────────────
@@ -115,10 +143,10 @@ export function generateResolvers(
     const columns = meta.ownColumns;
 
     // ── List ──
-    queries[names.listFieldName] = makeList(dataSource, meta, listType, filterInput, orderInput, columns);
+    queries[names.listFieldName] = makeList(dataSource, meta, listType, filterInput, orderInput, columns, relationMap);
 
     // ── Single ──
-    queries[names.singleFieldName] = makeSingle(dataSource, meta, selectType, filterInput, orderInput, columns);
+    queries[names.singleFieldName] = makeSingle(dataSource, meta, selectType, filterInput, orderInput, columns, relationMap);
 
     // ── Create ──
     if (insertInput) {
@@ -128,11 +156,11 @@ export function generateResolvers(
 
     // ── Update ──
     if (updateInput) {
-      mutations[names.updateFieldName] = makeUpdate(dataSource, meta, updateInput, filterInput, listType, columns);
+      mutations[names.updateFieldName] = makeUpdate(dataSource, meta, updateInput, filterInput, listType, columns, relationMap);
     }
 
     // ── Delete ──
-    mutations[names.deleteFieldName] = makeDelete(dataSource, meta, filterInput, listType, columns);
+    mutations[names.deleteFieldName] = makeDelete(dataSource, meta, filterInput, listType, columns, relationMap);
   }
 
   // Field resolvers for relations
@@ -141,7 +169,7 @@ export function generateResolvers(
     if (!meta) continue;
     const resolvers: Record<string, (...args: any[]) => Promise<any>> = {};
     for (const [relName, relInfo] of Object.entries(rels)) {
-      resolvers[relName] = createRelationResolver(dataSource, meta, relInfo);
+      resolvers[relName] = createRelationResolver(dataSource, meta, relInfo, relationMap);
     }
     if (Object.keys(resolvers).length > 0) {
       fieldResolvers[entityName] = resolvers;
@@ -164,15 +192,17 @@ function filterArgs(filterInput?: GraphQLInputObjectType, orderInput?: GraphQLIn
   return a;
 }
 
-function makeList(ds: DataSource, meta: EntityMetadata, listType: any, fi?: GraphQLInputObjectType, oi?: GraphQLInputObjectType, cols?: EntityMetadata['ownColumns']): any {
+function makeList(ds: DataSource, meta: EntityMetadata, listType: any, fi?: GraphQLInputObjectType, oi?: GraphQLInputObjectType, cols?: EntityMetadata['ownColumns'], relationMap?: RelationMap): any {
   const target = meta.target;
   return {
     type: listType,
     args: filterArgs(fi, oi, true, true),
     resolve: async (_s: any, args: any) => {
       const repo = ds.getRepository(target as any);
+      const resolved = resolveWhere(args['where'], meta, relationMap!);
       return remapToGraphQLArrayOutput(await repo.find({
-        where: resolveWhere(args['where'], cols!) as any,
+        where: resolved.where as any,
+        relations: resolved.relations.length > 0 ? resolved.relations : undefined as any,
         order: convertOrderBy(args['orderBy']) as any,
         skip: args['offset'] ?? undefined,
         take: args['limit'] ?? undefined,
@@ -181,15 +211,17 @@ function makeList(ds: DataSource, meta: EntityMetadata, listType: any, fi?: Grap
   };
 }
 
-function makeSingle(ds: DataSource, meta: EntityMetadata, st: GraphQLObjectType, fi?: GraphQLInputObjectType, oi?: GraphQLInputObjectType, cols?: EntityMetadata['ownColumns']): any {
+function makeSingle(ds: DataSource, meta: EntityMetadata, st: GraphQLObjectType, fi?: GraphQLInputObjectType, oi?: GraphQLInputObjectType, cols?: EntityMetadata['ownColumns'], relationMap?: RelationMap): any {
   const target = meta.target;
   return {
     type: st,
     args: filterArgs(fi, oi, true, false),
     resolve: async (_s: any, args: any) => {
       const repo = ds.getRepository(target as any);
+      const resolved = resolveWhere(args['where'], meta, relationMap!);
       const result = await repo.findOne({
-        where: resolveWhere(args['where'], cols!) as any,
+        where: resolved.where as any,
+        relations: resolved.relations.length > 0 ? resolved.relations : undefined as any,
         order: convertOrderBy(args['orderBy']) as any,
       } as any);
       if (!result) return null;
@@ -226,7 +258,7 @@ function makeCreateSingle(ds: DataSource, meta: EntityMetadata, ii: GraphQLInput
   };
 }
 
-function makeUpdate(ds: DataSource, meta: EntityMetadata, ui: GraphQLInputObjectType, fi: GraphQLInputObjectType | undefined, lt: any, cols: EntityMetadata['ownColumns']): any {
+function makeUpdate(ds: DataSource, meta: EntityMetadata, ui: GraphQLInputObjectType, fi: GraphQLInputObjectType | undefined, lt: any, cols: EntityMetadata['ownColumns'], relationMap?: RelationMap): any {
   const target = meta.target;
   const args: Record<string, any> = { set: { type: new GraphQLNonNull(ui) } };
   if (fi) args['where'] = { type: fi };
@@ -235,7 +267,11 @@ function makeUpdate(ds: DataSource, meta: EntityMetadata, ui: GraphQLInputObject
     args,
     resolve: async (_s: any, args: any) => {
       const repo = ds.getRepository(target as any);
-      const entities = await repo.find({ where: resolveWhere(args['where'], cols!) as any });
+      const resolved = resolveWhere(args['where'], meta, relationMap!);
+      const entities = await repo.find({
+        where: resolved.where as any,
+        relations: resolved.relations.length > 0 ? resolved.relations : undefined as any,
+      });
       if (!entities.length) return [];
       const mapped = remapFromGraphQLSingleInput(args['set'] as any, cols as any);
       for (const e of entities) Object.assign(e, mapped);
@@ -244,18 +280,22 @@ function makeUpdate(ds: DataSource, meta: EntityMetadata, ui: GraphQLInputObject
   };
 }
 
-function makeDelete(ds: DataSource, meta: EntityMetadata, fi: GraphQLInputObjectType | undefined, lt: any, cols: EntityMetadata['ownColumns']): any {
+function makeDelete(ds: DataSource, meta: EntityMetadata, fi: GraphQLInputObjectType | undefined, _lt: any, cols: EntityMetadata['ownColumns'], relationMap: RelationMap): any {
   const target = meta.target;
   const args: Record<string, any> = {};
   if (fi) args['where'] = { type: fi };
   return {
-    type: lt,
+    type: deleteResultType,
     args,
     resolve: async (_s: any, args: any) => {
       const repo = ds.getRepository(target as any);
-      const entities = await repo.find({ where: resolveWhere(args['where'], cols!) as any });
-      if (!entities.length) return [];
-      return remapToGraphQLArrayOutput(await repo.remove(entities) as any);
+      const resolved = resolveWhere(args['where'], meta, relationMap);
+      if (!resolved.where) return { affected: 0, raw: [] };
+      const result = await repo.delete(resolved.where as any);
+      return {
+        affected: result.affected ?? 0,
+        raw: (result.raw ?? []).map((r: any) => String(r)),
+      };
     },
   };
 }
@@ -264,7 +304,12 @@ function makeDelete(ds: DataSource, meta: EntityMetadata, fi: GraphQLInputObject
 // Relation resolver with N+1 batching
 // ──────────────────────────────────────────────
 
-function createRelationResolver(ds: DataSource, meta: EntityMetadata, relInfo: any): (...args: any[]) => Promise<any> {
+function createRelationResolver(
+  ds: DataSource,
+  meta: EntityMetadata,
+  relInfo: any,
+  relationMap: RelationMap,
+): (...args: any[]) => Promise<any> {
   const propertyName = relInfo.relation.propertyName;
   const isList = !relInfo.isOne;
   const isManyToMany = relInfo.relation.relationType === 'many-to-many';
@@ -304,13 +349,27 @@ function createRelationResolver(ds: DataSource, meta: EntityMetadata, relInfo: a
     }
   }
 
-  return async (source: any, _args: any, context: any) => {
-    if (source[propertyName] !== undefined) {
+  return async (source: any, args: any, context: any) => {
+    // Check if relation-specific args are provided
+    const hasArgs = args && (args.where || args.orderBy || args.limit !== undefined || args.offset !== undefined);
+
+    // If data is pre-loaded on source and no args, use it directly
+    if (source[propertyName] !== undefined && !hasArgs) {
       return source[propertyName];
     }
 
     const srcPkCol = meta.primaryColumns[0];
     if (!srcPkCol) return isList ? [] : null;
+
+    // Parse relation args
+    let resolvedWhere: any = undefined;
+    if (args?.where) {
+      const sub = resolveWhere(args.where, targetMeta, relationMap);
+      resolvedWhere = sub.where;
+    }
+    const order = args?.orderBy ? convertOrderBy(args.orderBy) : undefined;
+    const take = args?.limit ?? undefined;
+    const skip = args?.offset ?? undefined;
 
     if (isManyToMany) {
       const pkValue = source[srcPkCol.propertyName];
@@ -319,6 +378,21 @@ function createRelationResolver(ds: DataSource, meta: EntityMetadata, relInfo: a
       const jc = relInfo.relation.joinColumns?.[0]?.propertyName;
       const tpk = targetPk?.propertyName;
       if (!jt || !jc || !tpk) return [];
+
+      if (hasArgs) {
+        // With args: use find() for parameter support instead of QueryBuilder
+        const whereClause = resolvedWhere
+          ? { ...resolvedWhere, [tpk]: pkValue }
+          : { [tpk]: pkValue } as any;
+        return targetRepo.find({
+          where: whereClause,
+          order: order as any,
+          take,
+          skip,
+        });
+      }
+
+      // No args: use QueryBuilder with junction table join (same as before)
       return targetRepo.createQueryBuilder('t')
         .innerJoin(jt, 'j', `"j"."${tpk}" = "t"."${tpk}"`)
         .where(`"j"."${jc}" IN (:...ids)`, { ids: [pkValue] })
@@ -326,35 +400,57 @@ function createRelationResolver(ds: DataSource, meta: EntityMetadata, relInfo: a
     }
 
     if (relInfo.isOwning) {
-      // ManyToOne: FK value is accessible as a property on the source entity
+      // ManyToOne — single entity, ignore args, keep batch loader
       const fkValue = fkPropertyName ? source[fkPropertyName] : undefined;
       if (fkValue == null) return null;
       const targetPkName = targetPk?.propertyName;
       if (!targetPkName) return null;
 
-      const loader = getOrCreateLoader(`${meta.targetName}::${propertyName}`, `${meta.targetName}::${propertyName}`, async (keys: readonly any[]) => {
-        const unique = [...new Set(keys)];
-        const results = await (targetRepo as any).find({ where: { [targetPkName]: In(unique) } });
-        const byId = new Map(results.map((r: any) => [String(r[targetPkName]), r]));
-        return keys.map(k => byId.get(String(k)) ?? null);
-      });
+      const loader = getOrCreateLoader(
+        `${meta.targetName}::${propertyName}`,
+        `${meta.targetName}::${propertyName}`,
+        async (keys: readonly any[]) => {
+          const unique = [...new Set(keys)];
+          const results = await (targetRepo as any).find({ where: { [targetPkName]: In(unique) } });
+          const byId = new Map(results.map((r: any) => [String(r[targetPkName]), r]));
+          return keys.map(k => byId.get(String(k)) ?? null);
+        },
+      );
       return loader.load(fkValue);
     } else {
-      // OneToMany: FK is on target entity — batch by source PK
+      // OneToMany — check hasArgs
       const pkValue = source[srcPkCol.propertyName];
       if (pkValue == null || !fkPropertyName) return [];
 
-      const loader = getOrCreateLoader(`${meta.targetName}::${propertyName}`, `${meta.targetName}::${propertyName}`, async (keys: readonly any[]) => {
-        const unique = [...new Set(keys)];
-        const results = await (targetRepo as any).find({ where: { [fkPropertyName!]: In(unique) } });
-        const grouped = new Map<string, any[]>();
-        for (const id of unique) grouped.set(String(id), []);
-        for (const row of results) {
-          const pid = (row as any)[fkPropertyName!];
-          if (pid !== undefined) grouped.get(String(pid))?.push(row);
-        }
-        return keys.map(k => grouped.get(String(k)) ?? []);
-      });
+      if (hasArgs) {
+        // Direct query with args
+        const whereClause = resolvedWhere
+          ? { ...resolvedWhere, [fkPropertyName!]: pkValue }
+          : { [fkPropertyName!]: pkValue } as any;
+        return (targetRepo as any).find({
+          where: whereClause,
+          order: order as any,
+          take,
+          skip,
+        });
+      }
+
+      // Batch loaded (no args) — same as before
+      const loader = getOrCreateLoader(
+        `${meta.targetName}::${propertyName}`,
+        `${meta.targetName}::${propertyName}`,
+        async (keys: readonly any[]) => {
+          const unique = [...new Set(keys)];
+          const results = await (targetRepo as any).find({ where: { [fkPropertyName!]: In(unique) } });
+          const grouped = new Map<string, any[]>();
+          for (const id of unique) grouped.set(String(id), []);
+          for (const row of results) {
+            const pid = (row as any)[fkPropertyName!];
+            if (pid !== undefined) grouped.get(String(pid))?.push(row);
+          }
+          return keys.map(k => grouped.get(String(k)) ?? []);
+        },
+      );
       return loader.load(pkValue);
     }
   };
