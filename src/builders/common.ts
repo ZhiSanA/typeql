@@ -249,7 +249,19 @@ function buildOrGetType(
         if (info.isOne) {
           fields[relName] = { type: targetType, resolve: fieldResolver };
         } else {
-          fields[relName] = { type: new GraphQLList(new GraphQLNonNull(targetType)), resolve: fieldResolver };
+          // list relation: add where/orderBy/limit/offset args
+          const targetFilter = relationFilterCache.get(info.targetEntityName);
+          const targetOrder = relationOrderCache.get(info.targetEntityName);
+          const relArgs: Record<string, any> = {};
+          if (targetFilter) relArgs['where'] = { type: targetFilter };
+          if (targetOrder) relArgs['orderBy'] = { type: targetOrder };
+          relArgs['limit'] = { type: GraphQLInt };
+          relArgs['offset'] = { type: GraphQLInt };
+          fields[relName] = {
+            type: new GraphQLList(new GraphQLNonNull(targetType)),
+            args: relArgs,
+            resolve: fieldResolver,
+          };
         }
       }
       return fields;
