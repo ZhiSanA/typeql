@@ -1,5 +1,21 @@
 # @jishu.xin/typeql 变更记录
 
+## 2026-06-17-002 — 修复 simple-enum 支持 + school 模型端到端验证
+
+### 修复
+
+- **enum filter 重复类型名错误**：`makeEnumFilter()` 在 `generateRelationFilter()` 中被多次调用时创建同名 GraphQL 类型
+- **`classifyColumn` 无法识别 `simple-enum` 列**：TypeORM 的 `simple-enum` 类型字符串为 `"simple-enum"`，原有 `columnMeta.enum` 检测不充分
+- 添加 `enumFilterCache` 缓存，避免重复创建同名 GraphQL InputObjectType
+- 在 `classifyColumn` 中增加构造函数类型检测（`Number`, `Boolean`, `Date`, `String`）和更健壮的 enum 检测
+
+### 示例
+
+- `tool/example-server.ts` 合并 blog + school 双模型，覆盖 enum、PK identity、uuid、nested relation filter 等场景
+- school 模型验证了 `simple-enum` 配合 SQLite 的正确用法
+
+---
+
 ## 2026-06-17-001 — 代码质量：移除缩写、替换 any 为具体类型
 
 ### 变更

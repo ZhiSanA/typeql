@@ -186,7 +186,25 @@ function classifyColumn(
     );
     if (!columnMeta) return 'string';
     const typeString = String(columnMeta.type).toLowerCase();
-    if (columnMeta.enum && columnMeta.enum.length > 0) return 'enum';
+
+    // Handle constructor-based types (e.g., Number, Boolean, Date)
+    if (columnMeta.type === Number) return 'int';
+    if (columnMeta.type === Boolean) return 'boolean';
+    if (columnMeta.type === String) return 'string';
+    if (columnMeta.type === Date) return 'datetime';
+
+    // Handle enum columns — check if enum is defined (TS enums, simple-enum, etc.)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM column metadata enum
+    const columnEnum = (columnMeta as any).enum;
+    if (columnEnum) {
+      const keys = Object.keys(columnEnum);
+      // Filter out reverse numeric mappings (TypeScript numeric enums)
+      const values = keys.filter(
+        (k) => Number.isNaN(Number(k)),
+      );
+      if (values.length > 0) return 'enum';
+    }
+
     if (
       ['int', 'integer', 'smallint', 'mediumint', 'tinyint'].includes(
         typeString,
@@ -498,18 +516,25 @@ export function buildTableTypes(
   };
 }
 
+// ── Enum filter cache ──
+const enumFilterCache = new Map<string, GraphQLInputObjectType>();
+
 function makeEnumFilter(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM ColumnMetadata
   column: any,
   entityName: string,
 ): GraphQLInputObjectType {
+  const cacheKey = `${entityName}.${column.propertyName}`;
+  const cached = enumFilterCache.get(cacheKey);
+  if (cached) return cached;
+
   const graphqlType = typeormColumnToGraphQLType(column, entityName, false);
   const enumGraphqlType =
     graphqlType.type instanceof GraphQLEnumType
       ? graphqlType.type
       : GraphQLString;
   const filterName = `${entityName}_${capitalize(column.propertyName)}_EnumFilter`;
-  return new GraphQLInputObjectType({
+  const enumFilter = new GraphQLInputObjectType({
     name: filterName,
     fields: {
       eq: { type: enumGraphqlType },
@@ -520,6 +545,8 @@ function makeEnumFilter(
       isNotNull: { type: GraphQLBoolean },
     },
   });
+  enumFilterCache.set(cacheKey, enumFilter);
+  return enumFilter;
 }
 
 // ── Recursive relation filter generator ──
