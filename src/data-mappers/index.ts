@@ -3,12 +3,12 @@ import { GraphQLError } from 'graphql';
 // Minimal column interface matching what we use
 interface ColumnLike {
   propertyName: string;
-  type: any;
+  type: unknown;
   isNullable: boolean;
   isGenerated: boolean;
 }
 
-export const remapToGraphQLCore = (value: any, _column?: ColumnLike): any => {
+export const remapToGraphQLCore = (value: unknown): unknown => {
   if (value instanceof Date) {
     return value.toISOString();
   }
@@ -24,8 +24,10 @@ export const remapToGraphQLCore = (value: any, _column?: ColumnLike): any => {
   return value;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Entity property values from TypeORM are dynamic
 export const remapToGraphQLSingleOutput = (
-  entity: Record<string, any>,
+  entity: Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- Entity property values from TypeORM are dynamic
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Entity property values from TypeORM are dynamic
 ): Record<string, any> => {
   for (const [key, value] of Object.entries(entity)) {
     if (value === undefined || value === null) {
@@ -37,8 +39,10 @@ export const remapToGraphQLSingleOutput = (
   return entity;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Entity property values from TypeORM are dynamic
 export const remapToGraphQLArrayOutput = (
-  entities: Record<string, any>[],
+  entities: Record<string, any>[], // eslint-disable-line @typescript-eslint/no-explicit-any -- Entity property values from TypeORM are dynamic
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Entity property values from TypeORM are dynamic
 ): Record<string, any>[] => {
   for (const entry of entities) {
     remapToGraphQLSingleOutput(entry);
@@ -46,62 +50,77 @@ export const remapToGraphQLArrayOutput = (
   return entities;
 };
 
-export const remapFromGraphQLCore = (value: any, column: ColumnLike): any => {
-  const typeStr = String(column.type).toLowerCase();
+export const remapFromGraphQLCore = (
+  value: unknown,
+  column: ColumnLike,
+): unknown => {
+  const typeString = String(column.type).toLowerCase();
 
-  if (typeStr.includes('timestamp') || typeStr === 'datetime' || typeStr === 'timestamptz') {
+  if (
+    typeString.includes('timestamp') ||
+    typeString === 'datetime' ||
+    typeString === 'timestamptz'
+  ) {
     if (typeof value === 'string') {
-      const d = new Date(value);
-      if (Number.isNaN(d.getTime())) {
-        throw new GraphQLError(`Invalid date value for column "${column.propertyName}"`);
+      const dateObject = new Date(value);
+      if (Number.isNaN(dateObject.getTime())) {
+        throw new GraphQLError(
+          `Invalid date value for column "${column.propertyName}"`,
+        );
       }
-      return d;
+      return dateObject;
     }
     return value;
   }
 
-  if (typeStr === 'date') {
+  if (typeString === 'date') {
     if (typeof value === 'string') {
       const dateOnly = value.includes('T') ? value.split('T')[0]! : value;
-      const d = new Date(dateOnly);
-      if (Number.isNaN(d.getTime())) {
-        throw new GraphQLError(`Invalid date value for column "${column.propertyName}"`);
+      const dateObject = new Date(dateOnly);
+      if (Number.isNaN(dateObject.getTime())) {
+        throw new GraphQLError(
+          `Invalid date value for column "${column.propertyName}"`,
+        );
       }
       return dateOnly;
     }
     return value;
   }
 
-  if (typeStr === 'bigint' || typeStr === 'int8') {
+  if (typeString === 'bigint' || typeString === 'int8') {
     if (typeof value === 'string') {
       try {
         return BigInt(value);
       } catch {
-        throw new GraphQLError(`Invalid BigInt value for column "${column.propertyName}"`);
+        throw new GraphQLError(
+          `Invalid BigInt value for column "${column.propertyName}"`,
+        );
       }
     }
     return value;
   }
 
-  if (typeStr === 'json' || typeStr === 'jsonb') {
+  if (typeString === 'json' || typeString === 'jsonb') {
     if (typeof value === 'string') {
       try {
         return JSON.parse(value);
-      } catch (e: any) {
-        throw new GraphQLError(`Invalid JSON for column "${column.propertyName}": ${e.message}`);
+      } catch (error: unknown) {
+        throw new GraphQLError(
+          `Invalid JSON for column "${column.propertyName}": ${(error as Error).message}`,
+        );
       }
     }
     return value;
   }
 
-  if (typeStr === 'simple-json') {
+  if (typeString === 'simple-json') {
     if (value !== null && typeof value !== 'string') {
       return JSON.stringify(value);
     }
     return value;
   }
 
-  if (typeStr === 'simple-array') {
+  if (typeString === 'simple-array') {
     if (Array.isArray(value)) {
       return value.join(',');
     }
@@ -111,17 +130,21 @@ export const remapFromGraphQLCore = (value: any, column: ColumnLike): any => {
   return value;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Entity property values from TypeORM are dynamic
 export const remapFromGraphQLSingleInput = (
-  input: Record<string, any>,
+  input: Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- Entity property values from TypeORM are dynamic
   columns: ColumnLike[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Entity property values from TypeORM are dynamic
 ): Record<string, any> => {
-  const colMap = new Map(columns.map((c) => [c.propertyName, c]));
+  const columnMap = new Map(
+    columns.map((column) => [column.propertyName, column]),
+  );
   for (const [key, value] of Object.entries(input)) {
     if (value === undefined) {
       delete input[key];
       continue;
     }
-    const column = colMap.get(key);
+    const column = columnMap.get(key);
     if (!column) {
       throw new GraphQLError(`Unknown column: "${key}"`);
     }
@@ -134,9 +157,11 @@ export const remapFromGraphQLSingleInput = (
   return input;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Entity property values from TypeORM are dynamic
 export const remapFromGraphQLArrayInput = (
-  inputs: Record<string, any>[],
+  inputs: Record<string, any>[], // eslint-disable-line @typescript-eslint/no-explicit-any -- Entity property values from TypeORM are dynamic
   columns: ColumnLike[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Entity property values from TypeORM are dynamic
 ): Record<string, any>[] => {
   for (const entry of inputs) {
     remapFromGraphQLSingleInput(entry, columns);

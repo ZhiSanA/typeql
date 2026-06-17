@@ -1,12 +1,11 @@
-import type {
-  EntityMetadata,
-} from 'typeorm';
+import type { EntityMetadata } from 'typeorm';
 import type { DataSource } from 'typeorm';
 import {
   GraphQLBoolean,
   GraphQLEnumType,
   GraphQLFloat,
   GraphQLInputObjectType,
+  GraphQLInputType,
   GraphQLInt,
   GraphQLList,
   GraphQLNonNull,
@@ -14,7 +13,7 @@ import {
   GraphQLString,
 } from 'graphql';
 import { GraphQLDate, GraphQLDateTime } from 'graphql-scalars';
-import { capitalize, uncapitalize } from '../case-ops/index.ts';
+import { capitalize } from '../case-ops/index.ts';
 import { typeormColumnToGraphQLType } from '../type-converter/index.ts';
 import type { ConvertedColumn } from '../type-converter/types.ts';
 import { resolveNames, type TypeNameMapper } from './names.ts';
@@ -27,6 +26,7 @@ export interface RelationInfo {
   relationType: 'one-to-one' | 'many-to-one' | 'one-to-many' | 'many-to-many';
   isOwning: boolean;
   targetEntityName: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM RelationMetadata type
   relation: any;
   isOne: boolean;
 }
@@ -37,26 +37,28 @@ export function extractEntityMap(dataSource: DataSource): EntityMetadata[] {
   return dataSource.entityMetadatas;
 }
 
-export function buildRelationMap(metadatas: EntityMetadata[]): RelationMap {
+export function buildRelationMap(metadataList: EntityMetadata[]): RelationMap {
   const map: RelationMap = {};
-  for (const meta of metadatas) {
+  for (const meta of metadataList) {
     const name = meta.targetName;
-    const rels: Record<string, RelationInfo> = {};
-    for (const rel of meta.relations) {
-      if (rel.isTreeParent || rel.isTreeChildren) continue;
-      if (rel.isLazy) continue;
+    const relations: Record<string, RelationInfo> = {};
+    for (const relation of meta.relations) {
+      if (relation.isTreeParent || relation.isTreeChildren) continue;
+      if (relation.isLazy) continue;
 
-      const isOne = rel.relationType === 'one-to-one' || rel.relationType === 'many-to-one';
-      rels[rel.propertyName] = {
-        relationType: rel.relationType,
-        isOwning: rel.isOwning,
-        targetEntityName: rel.inverseEntityMetadata.targetName,
-        relation: rel,
+      const isOne =
+        relation.relationType === 'one-to-one' ||
+        relation.relationType === 'many-to-one';
+      relations[relation.propertyName] = {
+        relationType: relation.relationType,
+        isOwning: relation.isOwning,
+        targetEntityName: relation.inverseEntityMetadata.targetName,
+        relation,
         isOne,
       };
     }
-    if (Object.keys(rels).length > 0) {
-      map[name] = rels;
+    if (Object.keys(relations).length > 0) {
+      map[name] = relations;
     }
   }
   return map;
@@ -70,15 +72,18 @@ const sharedFilters = new Map<string, GraphQLInputObjectType>();
 
 function getOrCreateSharedFilter(
   name: string,
-  fieldsFn: () => Record<string, any>,
+  fieldsFunction: () => Record<string, { type: GraphQLInputType }>,
 ): GraphQLInputObjectType {
   if (sharedFilters.has(name)) return sharedFilters.get(name)!;
-  const main = new GraphQLInputObjectType({ name: `${name}Filter`, fields: fieldsFn });
+  const main = new GraphQLInputObjectType({
+    name: `${name}Filter`,
+    fields: fieldsFunction,
+  });
   sharedFilters.set(name, main);
   return main;
 }
 
-function stringFilterFields(): Record<string, any> {
+function stringFilterFields(): Record<string, { type: GraphQLInputType }> {
   return {
     eq: { type: GraphQLString },
     ne: { type: GraphQLString },
@@ -93,7 +98,7 @@ function stringFilterFields(): Record<string, any> {
   };
 }
 
-function intFilterFields(): Record<string, any> {
+function intFilterFields(): Record<string, { type: GraphQLInputType }> {
   return {
     eq: { type: GraphQLInt },
     ne: { type: GraphQLInt },
@@ -108,7 +113,7 @@ function intFilterFields(): Record<string, any> {
   };
 }
 
-function floatFilterFields(): Record<string, any> {
+function floatFilterFields(): Record<string, { type: GraphQLInputType }> {
   return {
     eq: { type: GraphQLFloat },
     ne: { type: GraphQLFloat },
@@ -123,7 +128,7 @@ function floatFilterFields(): Record<string, any> {
   };
 }
 
-function booleanFilterFields(): Record<string, any> {
+function booleanFilterFields(): Record<string, { type: GraphQLInputType }> {
   return {
     eq: { type: GraphQLBoolean },
     ne: { type: GraphQLBoolean },
@@ -132,7 +137,7 @@ function booleanFilterFields(): Record<string, any> {
   };
 }
 
-function dateTimeFilterFields(): Record<string, any> {
+function dateTimeFilterFields(): Record<string, { type: GraphQLInputType }> {
   return {
     eq: { type: GraphQLDateTime },
     ne: { type: GraphQLDateTime },
@@ -147,7 +152,7 @@ function dateTimeFilterFields(): Record<string, any> {
   };
 }
 
-function dateFilterFields(): Record<string, any> {
+function dateFilterFields(): Record<string, { type: GraphQLInputType }> {
   return {
     eq: { type: GraphQLDate },
     ne: { type: GraphQLDate },
@@ -162,19 +167,50 @@ function dateFilterFields(): Record<string, any> {
   };
 }
 
-type ColumnFilterCategory = 'string' | 'int' | 'float' | 'boolean' | 'date' | 'datetime' | 'enum';
+type ColumnFilterCategory =
+  | 'string'
+  | 'int'
+  | 'float'
+  | 'boolean'
+  | 'date'
+  | 'datetime'
+  | 'enum';
 
-function classifyColumn(meta: EntityMetadata): (colName: string) => ColumnFilterCategory {
-  return (colName: string) => {
-    const colMeta = meta.ownColumns.find((c: any) => c.propertyName === colName);
-    if (!colMeta) return 'string';
-    const t = String(colMeta.type).toLowerCase();
-    if (colMeta.enum && colMeta.enum.length > 0) return 'enum';
-    if (['int', 'integer', 'smallint', 'mediumint', 'tinyint'].includes(t)) return 'int';
-    if (['float', 'double', 'decimal', 'numeric', 'real', 'money'].includes(t)) return 'float';
-    if (['boolean', 'bool'].includes(t) || (t === 'tinyint' && colMeta.length === '1')) return 'boolean';
-    if (t.includes('timestamp') || t === 'datetime' || t === 'timestamptz') return 'datetime';
-    if (t === 'date') return 'date';
+function classifyColumn(
+  meta: EntityMetadata,
+): (columnName: string) => ColumnFilterCategory {
+  return (columnName: string) => {
+    const columnMeta = meta.ownColumns.find(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ColumnMetadata from TypeORM
+      (column: any) => column.propertyName === columnName,
+    );
+    if (!columnMeta) return 'string';
+    const typeString = String(columnMeta.type).toLowerCase();
+    if (columnMeta.enum && columnMeta.enum.length > 0) return 'enum';
+    if (
+      ['int', 'integer', 'smallint', 'mediumint', 'tinyint'].includes(
+        typeString,
+      )
+    )
+      return 'int';
+    if (
+      ['float', 'double', 'decimal', 'numeric', 'real', 'money'].includes(
+        typeString,
+      )
+    )
+      return 'float';
+    if (
+      ['boolean', 'bool'].includes(typeString) ||
+      (typeString === 'tinyint' && columnMeta.length === '1')
+    )
+      return 'boolean';
+    if (
+      typeString.includes('timestamp') ||
+      typeString === 'datetime' ||
+      typeString === 'timestamptz'
+    )
+      return 'datetime';
+    if (typeString === 'date') return 'date';
     return 'string';
   };
 }
@@ -183,14 +219,19 @@ function classifyColumn(meta: EntityMetadata): (colName: string) => ColumnFilter
 // Field resolvers for relations (mutable, populated by resolvers.ts)
 // ──────────────────────────────────────────────
 
-export const relationResolvers = new Map<string, (source: any, args: any, context: any) => Promise<any>>();
+export const relationResolvers = new Map<
+  string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver return type
+  (source: unknown, args: unknown, context: unknown) => Promise<any>
+>();
 
 export function registerFieldResolver(
   entityName: string,
-  relName: string,
-  resolver: (source: any, args: any, context: any) => Promise<any>,
+  relationName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver return type
+  resolver: (source: unknown, args: unknown, context: unknown) => Promise<any>,
 ): void {
-  relationResolvers.set(`${entityName}.${relName}`, resolver);
+  relationResolvers.set(`${entityName}.${relationName}`, resolver);
 }
 
 // ── Relation filter/order cache for field arguments ──
@@ -212,7 +253,10 @@ export const deleteResultType = new GraphQLObjectType({
 // ──────────────────────────────────────────────
 
 const typeCache = new Map<string, GraphQLObjectType>();
-const typeMetaMap = new Map<string, { meta: EntityMetadata; relations: Record<string, RelationInfo> }>();
+const typeMetaMap = new Map<
+  string,
+  { meta: EntityMetadata; relations: Record<string, RelationInfo> }
+>();
 
 function buildOrGetType(
   typeName: string,
@@ -226,40 +270,55 @@ function buildOrGetType(
   }
 
   // Store metadata for thunk resolution
-  typeMetaMap.set(typeName, { meta, relations: relationMap[meta.targetName] ?? {} });
+  typeMetaMap.set(typeName, {
+    meta,
+    relations: relationMap[meta.targetName] ?? {},
+  });
 
-  const gqlType = new GraphQLObjectType({
+  const graphqlType = new GraphQLObjectType({
     name: typeName,
     fields: () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config entries
       const fields: Record<string, any> = {};
-      for (const col of meta.ownColumns) {
-        const converted = typeormColumnToGraphQLType(col, meta.targetName, false);
-        fields[col.propertyName] = { type: converted.type };
+      for (const column of meta.ownColumns) {
+        const converted = typeormColumnToGraphQLType(
+          column,
+          meta.targetName,
+          false,
+        );
+        fields[column.propertyName] = { type: converted.type };
       }
       const stored = typeMetaMap.get(typeName);
       const relations = stored?.relations ?? {};
-      for (const [relName, relInfo] of Object.entries(relations)) {
-        const info = relInfo as RelationInfo;
+      for (const [relationName, relationInfo] of Object.entries(relations)) {
+        const info = relationInfo as RelationInfo;
         const targetMeta = entityMap[info.targetEntityName];
         if (!targetMeta) continue;
         const targetNames = resolveNames(info.targetEntityName, typeNameMapper);
-        const targetType = buildOrGetType(targetNames.typeName, targetMeta, entityMap, relationMap, typeNameMapper);
-        const resolverKey = `${meta.targetName}.${relName}`;
+        const targetType = buildOrGetType(
+          targetNames.typeName,
+          targetMeta,
+          entityMap,
+          relationMap,
+          typeNameMapper,
+        );
+        const resolverKey = `${meta.targetName}.${relationName}`;
         const fieldResolver = relationResolvers.get(resolverKey);
         if (info.isOne) {
-          fields[relName] = { type: targetType, resolve: fieldResolver };
+          fields[relationName] = { type: targetType, resolve: fieldResolver };
         } else {
-          // list relation: add where/orderBy/limit/offset args
+          // List relation: add where/orderBy/limit/offset args
           const targetFilter = relationFilterCache.get(info.targetEntityName);
           const targetOrder = relationOrderCache.get(info.targetEntityName);
-          const relArgs: Record<string, any> = {};
-          if (targetFilter) relArgs['where'] = { type: targetFilter };
-          if (targetOrder) relArgs['orderBy'] = { type: targetOrder };
-          relArgs['limit'] = { type: GraphQLInt };
-          relArgs['offset'] = { type: GraphQLInt };
-          fields[relName] = {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config entries
+          const relationArgs: Record<string, any> = {};
+          if (targetFilter) relationArgs['where'] = { type: targetFilter };
+          if (targetOrder) relationArgs['orderBy'] = { type: targetOrder };
+          relationArgs['limit'] = { type: GraphQLInt };
+          relationArgs['offset'] = { type: GraphQLInt };
+          fields[relationName] = {
             type: new GraphQLList(new GraphQLNonNull(targetType)),
-            args: relArgs,
+            args: relationArgs,
             resolve: fieldResolver,
           };
         }
@@ -268,8 +327,8 @@ function buildOrGetType(
     },
   });
 
-  typeCache.set(typeName, gqlType);
-  return gqlType;
+  typeCache.set(typeName, graphqlType);
+  return graphqlType;
 }
 
 export interface EntityTypeBundle {
@@ -290,18 +349,26 @@ export function buildTableTypes(
 ): EntityTypeBundle & { relationFields: Record<string, ConvertedColumn> } {
   const entityName = meta.targetName;
   const typeName = names.typeName;
-  const columns: any[] = meta.ownColumns;
-  const classifyFn = classifyColumn(meta);
+  const columns: EntityMetadata['ownColumns'] = meta.ownColumns;
+  const classifyFunction = classifyColumn(meta);
 
   // Output type (via cache to handle circular refs)
-  const outputType = buildOrGetType(typeName, meta, entityMap, relationMap, typeNameMapper);
+  const outputType = buildOrGetType(
+    typeName,
+    meta,
+    entityMap,
+    relationMap,
+    typeNameMapper,
+  );
 
   // ── Insert input ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config entries
   const insertFields: Record<string, any> = {};
-  for (const col of columns) {
-    if (col.isGenerated && col.generationStrategy === 'increment') continue;
-    const converted = typeormColumnToGraphQLType(col, entityName, true);
-    insertFields[col.propertyName] = { type: converted.type };
+  for (const column of columns) {
+    if (column.isGenerated && column.generationStrategy === 'increment')
+      continue;
+    const converted = typeormColumnToGraphQLType(column, entityName, true);
+    insertFields[column.propertyName] = { type: converted.type };
   }
   const insertInput = new GraphQLInputObjectType({
     name: `Create${typeName}Input`,
@@ -309,11 +376,13 @@ export function buildTableTypes(
   });
 
   // ── Update input ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config entries
   const updateFields: Record<string, any> = {};
-  for (const col of columns) {
-    if (col.isGenerated && col.generationStrategy === 'increment') continue;
-    const converted = typeormColumnToGraphQLType(col, entityName, true);
-    updateFields[col.propertyName] = { type: converted.type };
+  for (const column of columns) {
+    if (column.isGenerated && column.generationStrategy === 'increment')
+      continue;
+    const converted = typeormColumnToGraphQLType(column, entityName, true);
+    updateFields[column.propertyName] = { type: converted.type };
   }
   const updateInput = new GraphQLInputObjectType({
     name: `Update${typeName}Input`,
@@ -321,34 +390,51 @@ export function buildTableTypes(
   });
 
   // ── Filter input ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config entries
   const filterFields: Record<string, any> = {};
-  for (const col of columns) {
-    const cat = classifyFn(col.propertyName);
+  for (const column of columns) {
+    const category = classifyFunction(column.propertyName);
     let filterType: GraphQLInputObjectType;
-    switch (cat) {
-      case 'float': filterType = getOrCreateSharedFilter('Float', floatFilterFields); break;
-      case 'boolean': filterType = getOrCreateSharedFilter('Boolean', booleanFilterFields); break;
-      case 'date': filterType = getOrCreateSharedFilter('Date', dateFilterFields); break;
-      case 'datetime': filterType = getOrCreateSharedFilter('DateTime', dateTimeFilterFields); break;
-      case 'enum': filterType = makeEnumFilter(col, entityName); break;
-      case 'int': filterType = getOrCreateSharedFilter('Int', intFilterFields); break;
-      default: filterType = getOrCreateSharedFilter('String', stringFilterFields);
+    switch (category) {
+      case 'float':
+        filterType = getOrCreateSharedFilter('Float', floatFilterFields);
+        break;
+      case 'boolean':
+        filterType = getOrCreateSharedFilter('Boolean', booleanFilterFields);
+        break;
+      case 'date':
+        filterType = getOrCreateSharedFilter('Date', dateFilterFields);
+        break;
+      case 'datetime':
+        filterType = getOrCreateSharedFilter('DateTime', dateTimeFilterFields);
+        break;
+      case 'enum':
+        filterType = makeEnumFilter(column, entityName);
+        break;
+      case 'int':
+        filterType = getOrCreateSharedFilter('Int', intFilterFields);
+        break;
+      default:
+        filterType = getOrCreateSharedFilter('String', stringFilterFields);
     }
-    filterFields[col.propertyName] = { type: filterType };
+    filterFields[column.propertyName] = { type: filterType };
   }
 
   // ── Relation filter fields ──
-  const rels = relationMap[entityName] ?? {};
+  const relations = relationMap[entityName] ?? {};
   if (relationDepth > 0) {
     const visitedEntities = new Set<string>([entityName]);
-    for (const [relName, relInfo] of Object.entries(rels)) {
-      const targetEntityName = relInfo.targetEntityName;
+    for (const [relationName, relationInfo] of Object.entries(relations)) {
+      const targetEntityName = relationInfo.targetEntityName;
       if (visitedEntities.has(targetEntityName)) continue;
       visitedEntities.add(targetEntityName);
       const targetMeta = entityMap[targetEntityName];
-      if (!targetMeta) { visitedEntities.delete(targetEntityName); continue; }
+      if (!targetMeta) {
+        visitedEntities.delete(targetEntityName);
+        continue;
+      }
       const subFilter = generateRelationFilter(
-        `${typeName}_${relName}`,
+        `${typeName}_${relationName}`,
         targetMeta,
         entityMap,
         relationMap,
@@ -358,7 +444,7 @@ export function buildTableTypes(
       );
       visitedEntities.delete(targetEntityName);
       if (subFilter) {
-        filterFields[relName] = { type: subFilter };
+        filterFields[relationName] = { type: subFilter };
       }
     }
   }
@@ -370,23 +456,27 @@ export function buildTableTypes(
         name: `${typeName}_OrFilter`,
         fields: () => ({ ...filterFields }),
       });
-      return { ...filterFields, or: { type: new GraphQLList(new GraphQLNonNull(orType)) } };
+      return {
+        ...filterFields,
+        or: { type: new GraphQLList(new GraphQLNonNull(orType)) },
+      };
     },
   });
   relationFilterCache.set(entityName, filterInput);
 
   // ── Order input ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config entries
   const orderFields: Record<string, any> = {};
-  for (const col of columns) {
-    const dirEnum = new GraphQLEnumType({
-      name: `${typeName}_${capitalize(col.propertyName)}_Dir`,
+  for (const column of columns) {
+    const directionEnum = new GraphQLEnumType({
+      name: `${typeName}_${capitalize(column.propertyName)}_Direction`,
       values: { ASC: { value: 'ASC' }, DESC: { value: 'DESC' } },
     });
-    orderFields[col.propertyName] = {
+    orderFields[column.propertyName] = {
       type: new GraphQLInputObjectType({
-        name: `${typeName}_${capitalize(col.propertyName)}_Order`,
+        name: `${typeName}_${capitalize(column.propertyName)}_Order`,
         fields: {
-          direction: { type: new GraphQLNonNull(dirEnum) },
+          direction: { type: new GraphQLNonNull(directionEnum) },
           priority: { type: new GraphQLNonNull(GraphQLInt) },
         },
       }),
@@ -398,20 +488,34 @@ export function buildTableTypes(
   });
   relationOrderCache.set(entityName, orderInput);
 
-  return { outputType, insertInput, updateInput, filterInput, orderInput, relationFields: {} };
+  return {
+    outputType,
+    insertInput,
+    updateInput,
+    filterInput,
+    orderInput,
+    relationFields: {},
+  };
 }
 
-function makeEnumFilter(col: any, entityName: string): GraphQLInputObjectType {
-  const gqlType = typeormColumnToGraphQLType(col, entityName, false);
-  const enumGqlType = gqlType.type instanceof GraphQLEnumType ? gqlType.type : GraphQLString;
-  const filterName = `${entityName}_${capitalize(col.propertyName)}_EnumFilter`;
+function makeEnumFilter(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM ColumnMetadata
+  column: any,
+  entityName: string,
+): GraphQLInputObjectType {
+  const graphqlType = typeormColumnToGraphQLType(column, entityName, false);
+  const enumGraphqlType =
+    graphqlType.type instanceof GraphQLEnumType
+      ? graphqlType.type
+      : GraphQLString;
+  const filterName = `${entityName}_${capitalize(column.propertyName)}_EnumFilter`;
   return new GraphQLInputObjectType({
     name: filterName,
     fields: {
-      eq: { type: enumGqlType },
-      ne: { type: enumGqlType },
-      in: { type: new GraphQLList(new GraphQLNonNull(enumGqlType)) },
-      notIn: { type: new GraphQLList(new GraphQLNonNull(enumGqlType)) },
+      eq: { type: enumGraphqlType },
+      ne: { type: enumGraphqlType },
+      in: { type: new GraphQLList(new GraphQLNonNull(enumGraphqlType)) },
+      notIn: { type: new GraphQLList(new GraphQLNonNull(enumGraphqlType)) },
       isNull: { type: GraphQLBoolean },
       isNotNull: { type: GraphQLBoolean },
     },
@@ -420,7 +524,7 @@ function makeEnumFilter(col: any, entityName: string): GraphQLInputObjectType {
 
 // ── Recursive relation filter generator ──
 function generateRelationFilter(
-  entityName: string,
+  filterNamePrefix: string,
   meta: EntityMetadata,
   entityMap: Record<string, EntityMetadata>,
   relationMap: RelationMap,
@@ -431,37 +535,54 @@ function generateRelationFilter(
   // Guard: depth limit
   if (currentDepth > depthLimit) return null;
 
-  const filterName = `${entityName}_RelationFilter`;
-  const classifyFn = classifyColumn(meta);
+  const filterName = `${filterNamePrefix}_RelationFilter`;
+  const classifyFunction = classifyColumn(meta);
   const columns = meta.ownColumns;
 
   // Build scalar filter fields
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config entries
   const filterFields: Record<string, any> = {};
-  for (const col of columns) {
-    const cat = classifyFn(col.propertyName);
+  for (const column of columns) {
+    const category = classifyFunction(column.propertyName);
     let filterType: GraphQLInputObjectType;
-    switch (cat) {
-      case 'float': filterType = getOrCreateSharedFilter('Float', floatFilterFields); break;
-      case 'boolean': filterType = getOrCreateSharedFilter('Boolean', booleanFilterFields); break;
-      case 'date': filterType = getOrCreateSharedFilter('Date', dateFilterFields); break;
-      case 'datetime': filterType = getOrCreateSharedFilter('DateTime', dateTimeFilterFields); break;
-      case 'enum': filterType = makeEnumFilter(col, meta.targetName); break;
-      case 'int': filterType = getOrCreateSharedFilter('Int', intFilterFields); break;
-      default: filterType = getOrCreateSharedFilter('String', stringFilterFields);
+    switch (category) {
+      case 'float':
+        filterType = getOrCreateSharedFilter('Float', floatFilterFields);
+        break;
+      case 'boolean':
+        filterType = getOrCreateSharedFilter('Boolean', booleanFilterFields);
+        break;
+      case 'date':
+        filterType = getOrCreateSharedFilter('Date', dateFilterFields);
+        break;
+      case 'datetime':
+        filterType = getOrCreateSharedFilter('DateTime', dateTimeFilterFields);
+        break;
+      case 'enum':
+        filterType = makeEnumFilter(column, meta.targetName);
+        break;
+      case 'int':
+        filterType = getOrCreateSharedFilter('Int', intFilterFields);
+        break;
+      default:
+        filterType = getOrCreateSharedFilter('String', stringFilterFields);
     }
-    filterFields[col.propertyName] = { type: filterType };
+    filterFields[column.propertyName] = { type: filterType };
   }
 
   // Build relation filter fields (recursive with cycle guard)
-  const rels = relationMap[meta.targetName] ?? {};
-  for (const [relName, relInfo] of Object.entries(rels)) {
-    const targetEntityName = relInfo.targetEntityName;
+  const relations = relationMap[meta.targetName] ?? {};
+  for (const [relationName, relationInfo] of Object.entries(relations)) {
+    const targetEntityName = relationInfo.targetEntityName;
     if (visitedEntities.has(targetEntityName)) continue;
     visitedEntities.add(targetEntityName);
     const targetMeta = entityMap[targetEntityName];
-    if (!targetMeta) { visitedEntities.delete(targetEntityName); continue; }
+    if (!targetMeta) {
+      visitedEntities.delete(targetEntityName);
+      continue;
+    }
     const subFilter = generateRelationFilter(
-      `${entityName}_${relName}`,
+      `${filterNamePrefix}_${relationName}`,
       targetMeta,
       entityMap,
       relationMap,
@@ -471,7 +592,7 @@ function generateRelationFilter(
     );
     visitedEntities.delete(targetEntityName);
     if (subFilter) {
-      filterFields[relName] = { type: subFilter };
+      filterFields[relationName] = { type: subFilter };
     }
   }
 
@@ -482,7 +603,10 @@ function generateRelationFilter(
         name: `${filterName}_Or`,
         fields: () => ({ ...filterFields }),
       });
-      return { ...filterFields, or: { type: new GraphQLList(new GraphQLNonNull(orType)) } };
+      return {
+        ...filterFields,
+        or: { type: new GraphQLList(new GraphQLNonNull(orType)) },
+      };
     },
   });
 }
@@ -492,7 +616,7 @@ function generateRelationFilter(
 // ──────────────────────────────────────────────
 
 export function generateTypes(
-  entityMetadatas: EntityMetadata[],
+  metadataList: EntityMetadata[],
   entityMap: Record<string, EntityMetadata>,
   relationMap: RelationMap,
   typeNameMapper: TypeNameMapper,
@@ -512,9 +636,16 @@ export function generateTypes(
   const insertInputs: Record<string, GraphQLInputObjectType> = {};
   const updateInputs: Record<string, GraphQLInputObjectType> = {};
 
-  for (const meta of entityMetadatas) {
+  for (const meta of metadataList) {
     const names = resolveNames(meta.targetName, typeNameMapper);
-    const bundle = buildTableTypes(meta, entityMap, relationMap, typeNameMapper, names, relationDepth);
+    const bundle = buildTableTypes(
+      meta,
+      entityMap,
+      relationMap,
+      typeNameMapper,
+      names,
+      relationDepth,
+    );
     types[names.typeName] = bundle.outputType;
     insertInputs[meta.targetName] = bundle.insertInput;
     updateInputs[meta.targetName] = bundle.updateInput;

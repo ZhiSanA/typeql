@@ -1,12 +1,21 @@
 const TYPEQL_LOADERS_KEY = Symbol('typeql-loaders');
 
-type BatchFn<K, V> = (keys: readonly K[]) => Promise<readonly V[]>;
+type BatchFunction<K, V> = (keys: readonly K[]) => Promise<readonly V[]>;
+
+interface LoaderContainer {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Map stores generic BatchLoaders, cast on get
+  [TYPEQL_LOADERS_KEY]?: Map<string, BatchLoader<any, any>>;
+}
 
 class BatchLoader<K, V> {
-  private batch: Array<{ key: K; resolve: (v: V) => void; reject: (e: unknown) => void }> = [];
+  private batch: Array<{
+    key: K;
+    resolve: (value: V) => void;
+    reject: (error: unknown) => void;
+  }> = [];
   private scheduled = false;
 
-  constructor(private readonly batchFn: BatchFn<K, V>) {}
+  constructor(private readonly batchFunction: BatchFunction<K, V>) {}
 
   load(key: K): Promise<V> {
     return new Promise<V>((resolve, reject) => {
@@ -22,13 +31,13 @@ class BatchLoader<K, V> {
     const current = this.batch.splice(0);
     this.scheduled = false;
     try {
-      const results = await this.batchFn(current.map(({ key }) => key));
+      const results = await this.batchFunction(current.map(({ key }) => key));
       for (let i = 0; i < current.length; i++) {
         current[i]!.resolve(results[i] as V);
       }
-    } catch (err) {
+    } catch (error) {
       for (const { reject } of current) {
-        reject(err);
+        reject(error);
       }
     }
   }
@@ -39,19 +48,20 @@ class BatchLoader<K, V> {
  * If context is absent, returns a fresh (unbatched) loader.
  */
 export const getOrCreateLoader = <K, V>(
-  context: any,
+  context: unknown,
   key: string,
-  batchFn: BatchFn<K, V>,
+  batchFunction: BatchFunction<K, V>,
 ): BatchLoader<K, V> => {
   if (!context || typeof context !== 'object') {
-    return new BatchLoader<K, V>(batchFn);
+    return new BatchLoader<K, V>(batchFunction);
   }
-  if (!context[TYPEQL_LOADERS_KEY]) {
-    context[TYPEQL_LOADERS_KEY] = new Map<string, BatchLoader<any, any>>();
+  const container = context as LoaderContainer;
+  if (!container[TYPEQL_LOADERS_KEY]) {
+    container[TYPEQL_LOADERS_KEY] = new Map();
   }
-  const loaders = context[TYPEQL_LOADERS_KEY] as Map<string, BatchLoader<any, any>>;
+  const loaders = container[TYPEQL_LOADERS_KEY]!;
   if (!loaders.has(key)) {
-    loaders.set(key, new BatchLoader<K, V>(batchFn));
+    loaders.set(key, new BatchLoader<K, V>(batchFunction));
   }
   return loaders.get(key) as BatchLoader<K, V>;
 };

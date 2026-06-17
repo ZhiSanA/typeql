@@ -1,4 +1,4 @@
-import { DataSource } from 'typeorm';
+import { DataSource, EntityMetadata } from 'typeorm';
 import {
   type GraphQLFieldConfig,
   GraphQLObjectType as GQLObjectType,
@@ -33,15 +33,15 @@ export const buildSchema = (
     );
   }
 
-  const entityMetadatas = config.entities
-    ? dataSource.entityMetadatas.filter((m) =>
-        config.entities!.includes(m.target as Function),
+  const metadataList = config.entities
+    ? dataSource.entityMetadatas.filter((metadata) =>
+        config.entities!.includes(metadata.target as never),
       )
     : dataSource.entityMetadatas;
 
-  if (entityMetadatas.length === 0) {
+  if (metadataList.length === 0) {
     throw new Error(
-      'TypeQL Error: No entity metadatas found. Did you forget to add entities to the DataSource?',
+      'TypeQL Error: No entity metadata found. Did you forget to add entities to the DataSource?',
     );
   }
 
@@ -49,9 +49,7 @@ export const buildSchema = (
   const typeNameMapper =
     config.typeNameMapper ??
     ((name: string) => {
-      // -
       name = lowerFirst(name);
-      // -
       return {
         singular: name,
         plural: pluralize.plural(name),
@@ -59,15 +57,15 @@ export const buildSchema = (
     });
 
   // Build entity and relation maps
-  const entityMap: Record<string, any> = {};
-  for (const meta of entityMetadatas) {
+  const entityMap: Record<string, EntityMetadata> = {};
+  for (const meta of metadataList) {
     entityMap[meta.targetName] = meta;
   }
-  const relationMap = buildRelationMap(entityMetadatas);
+  const relationMap = buildRelationMap(metadataList);
 
   // Generate types
   const typeOutputs = generateTypes(
-    entityMetadatas,
+    metadataList,
     entityMap,
     relationMap,
     typeNameMapper,
@@ -77,17 +75,17 @@ export const buildSchema = (
   // Generate resolvers
   const { queries, mutations, fieldResolvers } = generateResolvers(
     dataSource,
-    entityMetadatas,
+    metadataList,
     relationMap,
     typeNameMapper,
     typeOutputs,
   );
 
   // Build schema
-  const schemaConfig: any = {
+  const schemaConfig: Record<string, unknown> = {
     query: new GQLObjectType({
       name: 'Query',
-      fields: queries as Record<string, GraphQLFieldConfig<any, any>>,
+      fields: queries as Record<string, GraphQLFieldConfig<unknown, unknown>>,
     }),
     types: [...Object.values(typeOutputs.inputs)],
   };
@@ -95,7 +93,7 @@ export const buildSchema = (
   if (config.mutations !== false) {
     schemaConfig.mutation = new GQLObjectType({
       name: 'Mutation',
-      fields: mutations as Record<string, GraphQLFieldConfig<any, any>>,
+      fields: mutations as Record<string, GraphQLFieldConfig<unknown, unknown>>,
     });
   }
 

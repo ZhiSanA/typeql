@@ -25,28 +25,28 @@ npm install typeorm graphql graphql-scalars reflect-metadata
 ## 🚀 快速开始
 
 ```typescript
-import "reflect-metadata";
-import { DataSource, Entity, PrimaryGeneratedColumn, Column } from "typeorm";
-import { buildSchema } from "@jishu.xin/typeql";
+import 'reflect-metadata';
+import { DataSource, Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { buildSchema } from '@jishu.xin/typeql';
 
 // 1. 定义 TypeORM 实体
 @Entity()
 class User {
   @PrimaryGeneratedColumn() id!: number;
-  @Column("text") name!: string;
+  @Column('text') name!: string;
 }
 
 @Entity()
 class Post {
   @PrimaryGeneratedColumn() id!: number;
-  @Column("text") title!: string;
+  @Column('text') title!: string;
   @ManyToOne(() => User) author!: User;
 }
 
 // 2. 初始化 DataSource
 const dataSource = new DataSource({
-  type: "better-sqlite3",
-  database: ":memory:",
+  type: 'better-sqlite3',
+  database: ':memory:',
   entities: [User, Post],
   synchronize: true,
 });
@@ -117,14 +117,14 @@ mutation {
 
 每个实体自动生成以下操作：
 
-| 操作 | Query/Mutation | 说明 |
-|------|---------------|------|
-| 列表查询 | `users` | 支持过滤、排序、分页 |
-| 单条查询 | `user` | 支持过滤、排序 |
-| 批量创建 | `createUsers` | 一次创建多条记录 |
-| 单条创建 | `createUser` | 创建单条记录 |
-| 更新 | `updateUser` | 按条件批量更新 |
-| 删除 | `deleteUser` | 按条件批量删除，返回 `DeleteResult` |
+| 操作     | Query/Mutation | 说明                                |
+| -------- | -------------- | ----------------------------------- |
+| 列表查询 | `users`        | 支持过滤、排序、分页                |
+| 单条查询 | `user`         | 支持过滤、排序                      |
+| 批量创建 | `createUsers`  | 一次创建多条记录                    |
+| 单条创建 | `createUser`   | 创建单条记录                        |
+| 更新     | `updateUser`   | 按条件批量更新                      |
+| 删除     | `deleteUser`   | 按条件批量删除，返回 `DeleteResult` |
 
 ### 2. 强大的过滤能力
 
@@ -158,12 +158,7 @@ mutation {
 
 ```graphql
 query {
-  users(where: {
-    or: [
-      { name: { eq: "Alice" } },
-      { name: { eq: "Bob" } }
-    ]
-  }) {
+  users(where: { or: [{ name: { eq: "Alice" } }, { name: { eq: "Bob" } }] }) {
     id
     name
   }
@@ -202,11 +197,7 @@ query {
 
 ```graphql
 query {
-  articles(where: {
-    author: {
-      name: { eq: "Alice" }
-    }
-  }) {
+  articles(where: { author: { name: { eq: "Alice" } } }) {
     id
     title
   }
@@ -241,18 +232,18 @@ query {
 
 自动将 TypeORM 列类型映射为 GraphQL 类型：
 
-| TypeORM 类型 | GraphQL 类型 |
-|-------------|-------------|
-| `int` / `integer` / `smallint` 等 | `Int` |
-| `float` / `double` / `decimal` 等 | `Float` |
-| `boolean` / `bool` | `Boolean` |
-| `date` | `Date` (graphql-scalars) |
-| `timestamp` / `datetime` | `DateTime` (graphql-scalars) |
-| `text` / `varchar` 等字符串 | `String` |
-| `json` / `jsonb` | `String` (JSON 字符串) |
-| `bigint` / `int8` | `String` (BigInt 字符串) |
-| `uuid` | `String` |
-| `enum` | 枚举类型 |
+| TypeORM 类型                      | GraphQL 类型                 |
+| --------------------------------- | ---------------------------- |
+| `int` / `integer` / `smallint` 等 | `Int`                        |
+| `float` / `double` / `decimal` 等 | `Float`                      |
+| `boolean` / `bool`                | `Boolean`                    |
+| `date`                            | `Date` (graphql-scalars)     |
+| `timestamp` / `datetime`          | `DateTime` (graphql-scalars) |
+| `text` / `varchar` 等字符串       | `String`                     |
+| `json` / `jsonb`                  | `String` (JSON 字符串)       |
+| `bigint` / `int8`                 | `String` (BigInt 字符串)     |
+| `uuid`                            | `String`                     |
+| `enum`                            | 枚举类型                     |
 
 ---
 
@@ -307,8 +298,8 @@ const { schema } = buildSchema(dataSource, {
 
   // 自定义命名
   typeNameMapper: (name) => {
-    if (name === "Person") {
-      return { singular: "person", plural: "people" };
+    if (name === 'Person') {
+      return { singular: 'person', plural: 'people' };
     }
     return undefined; // 其他实体使用默认
   },
@@ -324,10 +315,10 @@ const { schema } = buildSchema(dataSource, {
 
 默认使用 `pluralize` 库自动处理单复数：
 
-| 实体 | 列表查询 | 单条查询 | 创建(单/批) | 更新 | 删除 |
-|------|---------|---------|------------|------|------|
-| `User` | `users` | `user` | `createUser` / `createUsers` | `updateUser` | `deleteUser` |
-| `Post` | `posts` | `post` | `createPost` / `createPosts` | `updatePost` | `deletePost` |
+| 实体       | 列表查询     | 单条查询   | 创建(单/批)                           | 更新             | 删除             |
+| ---------- | ------------ | ---------- | ------------------------------------- | ---------------- | ---------------- |
+| `User`     | `users`      | `user`     | `createUser` / `createUsers`          | `updateUser`     | `deleteUser`     |
+| `Post`     | `posts`      | `post`     | `createPost` / `createPosts`          | `updatePost`     | `deletePost`     |
 | `Category` | `categories` | `category` | `createCategory` / `createCategories` | `updateCategory` | `deleteCategory` |
 
 可通过 `typeNameMapper` 覆盖命名：
@@ -335,8 +326,8 @@ const { schema } = buildSchema(dataSource, {
 ```typescript
 buildSchema(dataSource, {
   typeNameMapper: (name) => {
-    if (name === "Person") {
-      return { singular: "person", plural: "people" };
+    if (name === 'Person') {
+      return { singular: 'person', plural: 'people' };
     }
     return undefined; // 其他实体使用默认行为
   },

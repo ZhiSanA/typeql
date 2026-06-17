@@ -13,9 +13,11 @@
 ### Task 1: 模块级 filter/order 缓存 + DeleteResult 类型 + 关系 filter 递归生成
 
 **Files:**
+
 - Modify: `src/builders/common.ts`
 
 **说明：** 这是最核心的改动，需要在 `common.ts` 中完成三件事：
+
 1. 新增模块级 `relationFilterCache` / `relationOrderCache` Map，供后续 output type 构建字段 args 时读取
 2. 新增 `GraphQLObjectType` 类型的 `DeleteResult` 供 delete mutation 使用
 3. 在 `buildTableTypes()` 中递归生成关联实体的 filter input，支持 nested relation filter + visitedEntities 循环保护
@@ -66,13 +68,26 @@ function generateRelationFilter(
     const cat = classifyFn(col.propertyName);
     let filterType: GraphQLInputObjectType;
     switch (cat) {
-      case 'float': filterType = getOrCreateSharedFilter('Float', floatFilterFields); break;
-      case 'boolean': filterType = getOrCreateSharedFilter('Boolean', booleanFilterFields); break;
-      case 'date': filterType = getOrCreateSharedFilter('Date', dateFilterFields); break;
-      case 'datetime': filterType = getOrCreateSharedFilter('DateTime', dateTimeFilterFields); break;
-      case 'enum': filterType = makeEnumFilter(col, entityName); break;
-      case 'int': filterType = getOrCreateSharedFilter('Int', intFilterFields); break;
-      default: filterType = getOrCreateSharedFilter('String', stringFilterFields);
+      case 'float':
+        filterType = getOrCreateSharedFilter('Float', floatFilterFields);
+        break;
+      case 'boolean':
+        filterType = getOrCreateSharedFilter('Boolean', booleanFilterFields);
+        break;
+      case 'date':
+        filterType = getOrCreateSharedFilter('Date', dateFilterFields);
+        break;
+      case 'datetime':
+        filterType = getOrCreateSharedFilter('DateTime', dateTimeFilterFields);
+        break;
+      case 'enum':
+        filterType = makeEnumFilter(col, entityName);
+        break;
+      case 'int':
+        filterType = getOrCreateSharedFilter('Int', intFilterFields);
+        break;
+      default:
+        filterType = getOrCreateSharedFilter('String', stringFilterFields);
     }
     filterFields[col.propertyName] = { type: filterType };
   }
@@ -84,7 +99,10 @@ function generateRelationFilter(
     if (visitedEntities.has(targetEntityName)) continue;
     visitedEntities.add(targetEntityName);
     const targetMeta = entityMap[targetEntityName];
-    if (!targetMeta) { visitedEntities.delete(targetEntityName); continue; }
+    if (!targetMeta) {
+      visitedEntities.delete(targetEntityName);
+      continue;
+    }
     const subFilter = generateRelationFilter(
       `${entityName}_${relName}`,
       targetMeta,
@@ -107,7 +125,10 @@ function generateRelationFilter(
         name: `${filterName}_Or`,
         fields: () => ({ ...filterFields }),
       });
-      return { ...filterFields, or: { type: new GraphQLList(new GraphQLNonNull(orType)) } };
+      return {
+        ...filterFields,
+        or: { type: new GraphQLList(new GraphQLNonNull(orType)) },
+      };
     },
   });
 }
@@ -127,7 +148,10 @@ for (const [relName, relInfo] of Object.entries(rels)) {
   if (visitedEntities.has(targetEntityName)) continue;
   visitedEntities.add(targetEntityName);
   const targetMeta = entityMap[targetEntityName];
-  if (!targetMeta) { visitedEntities.delete(targetEntityName); continue; }
+  if (!targetMeta) {
+    visitedEntities.delete(targetEntityName);
+    continue;
+  }
   const subFilter = generateRelationFilter(
     `${typeName}_${relName}`,
     targetMeta,
@@ -182,6 +206,7 @@ git commit -m "feat(common): add relation filter generation, filter/order cache,
 ### Task 2: output type 关系字段添加 args
 
 **Files:**
+
 - Modify: `src/builders/common.ts`
 - Modify: `src/builders/types.ts` (辅助类型)
 
@@ -196,7 +221,10 @@ git commit -m "feat(common): add relation filter generation, filter/order cache,
 if (info.isOne) {
   fields[relName] = { type: targetType, resolve: fieldResolver };
 } else {
-  fields[relName] = { type: new GraphQLList(new GraphQLNonNull(targetType)), resolve: fieldResolver };
+  fields[relName] = {
+    type: new GraphQLList(new GraphQLNonNull(targetType)),
+    resolve: fieldResolver,
+  };
 }
 
 // 修改后：
@@ -236,6 +264,7 @@ git commit -m "feat(common): add filter/order/limit/offset args to list relation
 ### Task 3: resolvers.ts — where 多级关联解析 + 关系解析器支持 args + delete 修复
 
 **Files:**
+
 - Modify: `src/builders/resolvers.ts`
 
 - [ ] **Step 1: 更新 `resolveWhere()` 支持 relation 路径**
@@ -249,7 +278,7 @@ function resolveWhere(
   relationMap: RelationMap,
 ): { where: Record<string, any>; relations: string[] } {
   if (!argsWhere) return { where: undefined as any, relations: [] };
-  
+
   const columns = meta.ownColumns;
   const result: Record<string, any> = {};
   const relations: string[] = [];
@@ -261,8 +290,8 @@ function resolveWhere(
     if (orParts?.length) {
       result[orKey] = orParts
         .map((w: any) => resolveWhere(w, meta, relationMap))
-        .filter(r => r.where != null)
-        .map(r => {
+        .filter((r) => r.where != null)
+        .map((r) => {
           relations.push(...r.relations);
           return r.where;
         });
@@ -297,24 +326,50 @@ function resolveWhere(
       for (const [op, val] of Object.entries(value as Record<string, any>)) {
         if (val === undefined || val === null) continue;
         switch (op) {
-          case 'eq': result[key] = val; break;
-          case 'ne': result[key] = Not(val); break;
-          case 'lt': result[key] = LessThan(val); break;
-          case 'lte': result[key] = LessThanOrEqual(val); break;
-          case 'gt': result[key] = MoreThan(val); break;
-          case 'gte': result[key] = MoreThanOrEqual(val); break;
-          case 'like': result[key] = Like(val); break;
-          case 'notLike': result[key] = Not(Like(val)); break;
-          case 'ilike': result[key] = Like(val); break;
-          case 'notIlike': result[key] = Not(Like(val)); break;
-          case 'inArray': case 'in':
-            result[key] = In(Array.isArray(val) ? val : [val]); break;
-          case 'notInArray': case 'notIn':
-            result[key] = Not(In(Array.isArray(val) ? val : [val])); break;
+          case 'eq':
+            result[key] = val;
+            break;
+          case 'ne':
+            result[key] = Not(val);
+            break;
+          case 'lt':
+            result[key] = LessThan(val);
+            break;
+          case 'lte':
+            result[key] = LessThanOrEqual(val);
+            break;
+          case 'gt':
+            result[key] = MoreThan(val);
+            break;
+          case 'gte':
+            result[key] = MoreThanOrEqual(val);
+            break;
+          case 'like':
+            result[key] = Like(val);
+            break;
+          case 'notLike':
+            result[key] = Not(Like(val));
+            break;
+          case 'ilike':
+            result[key] = Like(val);
+            break;
+          case 'notIlike':
+            result[key] = Not(Like(val));
+            break;
+          case 'inArray':
+          case 'in':
+            result[key] = In(Array.isArray(val) ? val : [val]);
+            break;
+          case 'notInArray':
+          case 'notIn':
+            result[key] = Not(In(Array.isArray(val) ? val : [val]));
+            break;
           case 'isNull':
-            result[key] = IsNull(); break;
+            result[key] = IsNull();
+            break;
           case 'isNotNull':
-            result[key] = Not(IsNull()); break;
+            result[key] = Not(IsNull());
+            break;
         }
       }
     }
@@ -334,6 +389,7 @@ function resolveWhere(
 每处修改方式如下：
 
 **makeList:**
+
 ```typescript
 resolve: async (_s: any, args: any) => {
   const repo = ds.getRepository(target as any);
@@ -349,6 +405,7 @@ resolve: async (_s: any, args: any) => {
 ```
 
 **makeSingle:**
+
 ```typescript
 resolve: async (_s: any, args: any) => {
   const repo = ds.getRepository(target as any);
@@ -364,6 +421,7 @@ resolve: async (_s: any, args: any) => {
 ```
 
 **makeUpdate:**
+
 ```typescript
 resolve: async (_s: any, args: any) => {
   const repo = ds.getRepository(target as any);
@@ -380,8 +438,16 @@ resolve: async (_s: any, args: any) => {
 ```
 
 **makeDelete:**
+
 ```typescript
-function makeDelete(ds: DataSource, meta: EntityMetadata, fi: GraphQLInputObjectType | undefined, _lt: any, cols: EntityMetadata['ownColumns'], relationMap: RelationMap): any {
+function makeDelete(
+  ds: DataSource,
+  meta: EntityMetadata,
+  fi: GraphQLInputObjectType | undefined,
+  _lt: any,
+  cols: EntityMetadata['ownColumns'],
+  relationMap: RelationMap,
+): any {
   const target = meta.target;
   const args: Record<string, any> = {};
   if (fi) args['where'] = { type: fi };
@@ -403,8 +469,16 @@ function makeDelete(ds: DataSource, meta: EntityMetadata, fi: GraphQLInputObject
 ```
 
 然后在 `generateResolvers()` 中调用 `makeDelete` 时传入 `relationMap`：
+
 ```typescript
-mutations[names.deleteFieldName] = makeDelete(dataSource, meta, filterInput, listType, columns, relationMap);
+mutations[names.deleteFieldName] = makeDelete(
+  dataSource,
+  meta,
+  filterInput,
+  listType,
+  columns,
+  relationMap,
+);
 ```
 
 还需要在文件顶部导入 `deleteResultType` 和 `relationFilterCache`、`relationOrderCache`（last one for relation resolver）。
@@ -428,7 +502,12 @@ function createRelationResolver(
     const propertyName = relInfo.relation.propertyName;
 
     // Check if args are provided — if so, bypass batch loading
-    const hasArgs = args && (args.where || args.orderBy || args.limit !== undefined || args.offset !== undefined);
+    const hasArgs =
+      args &&
+      (args.where ||
+        args.orderBy ||
+        args.limit !== undefined ||
+        args.offset !== undefined);
 
     if (source[propertyName] !== undefined && !hasArgs) {
       return source[propertyName];
@@ -444,7 +523,8 @@ function createRelationResolver(
       const targetMeta = relInfo.relation.inverseEntityMetadata;
       const resolved = resolveWhere(args.where, targetMeta, relationMap);
       resolvedWhere = resolved.where;
-      resolvedRelations = resolved.relations.length > 0 ? resolved.relations : undefined;
+      resolvedRelations =
+        resolved.relations.length > 0 ? resolved.relations : undefined;
     }
     const order = args?.orderBy ? convertOrderBy(args.orderBy) : undefined;
     const take = args?.limit ?? undefined;
@@ -458,7 +538,8 @@ function createRelationResolver(
       const tpk = targetPk?.propertyName;
       if (!jt || !jc || !tpk) return [];
 
-      let query = targetRepo.createQueryBuilder('t')
+      let query = targetRepo
+        .createQueryBuilder('t')
         .innerJoin(jt, 'j', `"j"."${tpk}" = "t"."${tpk}"`)
         .where(`"j"."${jc}" IN (:...ids)`, { ids: [pkValue] });
 
@@ -493,9 +574,13 @@ function createRelationResolver(
         `${meta.targetName}::${propertyName}`,
         async (keys: readonly any[]) => {
           const unique = [...new Set(keys)];
-          const results = await (targetRepo as any).find({ where: { [targetPkName]: In(unique) } });
-          const byId = new Map(results.map((r: any) => [String(r[targetPkName]), r]));
-          return keys.map(k => byId.get(String(k)) ?? null);
+          const results = await (targetRepo as any).find({
+            where: { [targetPkName]: In(unique) },
+          });
+          const byId = new Map(
+            results.map((r: any) => [String(r[targetPkName]), r]),
+          );
+          return keys.map((k) => byId.get(String(k)) ?? null);
         },
       );
       return loader.load(fkValue);
@@ -508,7 +593,7 @@ function createRelationResolver(
         // Direct query with args
         const whereClause = resolvedWhere
           ? { ...resolvedWhere, [fkPropertyName!]: pkValue }
-          : { [fkPropertyName!]: pkValue } as any;
+          : ({ [fkPropertyName!]: pkValue } as any);
         return (targetRepo as any).find({
           where: whereClause,
           order: order as any,
@@ -524,14 +609,16 @@ function createRelationResolver(
         `${meta.targetName}::${propertyName}`,
         async (keys: readonly any[]) => {
           const unique = [...new Set(keys)];
-          const results = await (targetRepo as any).find({ where: { [fkPropertyName!]: In(unique) } });
+          const results = await (targetRepo as any).find({
+            where: { [fkPropertyName!]: In(unique) },
+          });
           const grouped = new Map<string, any[]>();
           for (const id of unique) grouped.set(String(id), []);
           for (const row of results) {
             const pid = (row as any)[fkPropertyName!];
             if (pid !== undefined) grouped.get(String(pid))?.push(row);
           }
-          return keys.map(k => grouped.get(String(k)) ?? []);
+          return keys.map((k) => grouped.get(String(k)) ?? []);
         },
       );
       return loader.load(pkValue);
@@ -543,7 +630,12 @@ function createRelationResolver(
 - [ ] **Step 4: 更新 `generateResolvers()` 中 `createRelationResolver` 调用传入 `relationMap`**
 
 ```typescript
-resolvers[relName] = createRelationResolver(dataSource, meta, relInfo, relationMap);
+resolvers[relName] = createRelationResolver(
+  dataSource,
+  meta,
+  relInfo,
+  relationMap,
+);
 ```
 
 - [ ] **Step 5: 更新文件导入**
@@ -551,7 +643,13 @@ resolvers[relName] = createRelationResolver(dataSource, meta, relInfo, relationM
 在文件顶部添加新导入：
 
 ```typescript
-import { type RelationMap, generateTypes, registerFieldResolver, deleteResultType, relationFilterCache } from './common.ts';
+import {
+  type RelationMap,
+  generateTypes,
+  registerFieldResolver,
+  deleteResultType,
+  relationFilterCache,
+} from './common.ts';
 ```
 
 - [ ] **Step 6: 构建验证**
@@ -571,6 +669,7 @@ git commit -m "feat(resolvers): nested relation where, relation field args, dele
 ### Task 4: 配置项扩展
 
 **Files:**
+
 - Modify: `src/types.ts`
 - Modify: `src/buildSchema.ts`
 
@@ -592,6 +691,7 @@ export interface BuildSchemaConfig {
 - [ ] **Step 2: 将配置传递到 `buildTableTypes` 和 `generateTypes`**
 
 在 `buildSchema.ts` 传递给 `generateTypes` 时使用:
+
 ```typescript
 const typeOutputs = generateTypes(
   entityMetadatas,

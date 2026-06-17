@@ -23,7 +23,9 @@ export type ConvertedColumn<TIsInput extends boolean = false> = {
             | GraphQLNonNull<GraphQLInputObjectType>
             | GraphQLList<GraphQLInputObjectType>
             | GraphQLNonNull<GraphQLList<GraphQLInputObjectType>>
-            | GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLInputObjectType>>>
+            | GraphQLNonNull<
+                GraphQLList<GraphQLNonNull<GraphQLInputObjectType>>
+              >
         :
             | GraphQLObjectType
             | GraphQLNonNull<GraphQLObjectType>

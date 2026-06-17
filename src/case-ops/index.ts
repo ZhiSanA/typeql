@@ -10,4 +10,5 @@ export const capitalize = <T extends string>(input: T) =>
     ? `${input[0]!.toLocaleUpperCase()}${input.length > 1 ? input.slice(1, input.length) : ''}`
     : input) as Capitalize<T>;
 
-export const singularize = <T extends string>(input: T) => pluralize.singular(input);
+export const singularize = <T extends string>(input: T) =>
+  pluralize.singular(input);

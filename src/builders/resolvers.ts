@@ -1,5 +1,14 @@
 import { DataSource, EntityMetadata } from 'typeorm';
-import { In, IsNull, LessThan, LessThanOrEqual, Like, MoreThan, MoreThanOrEqual, Not } from 'typeorm';
+import {
+  In,
+  IsNull,
+  LessThan,
+  LessThanOrEqual,
+  Like,
+  MoreThan,
+  MoreThanOrEqual,
+  Not,
+} from 'typeorm';
 import {
   GraphQLInputObjectType,
   GraphQLInt,
@@ -8,8 +17,18 @@ import {
   GraphQLObjectType,
 } from 'graphql';
 import { getOrCreateLoader } from '../batch-loader/index.ts';
-import { remapFromGraphQLArrayInput, remapFromGraphQLSingleInput, remapToGraphQLArrayOutput, remapToGraphQLSingleOutput } from '../data-mappers/index.ts';
-import { type RelationMap, generateTypes, registerFieldResolver, deleteResultType } from './common.ts';
+import {
+  remapFromGraphQLArrayInput,
+  remapFromGraphQLSingleInput,
+  remapToGraphQLArrayOutput,
+  remapToGraphQLSingleOutput,
+} from '../data-mappers/index.ts';
+import {
+  type RelationMap,
+  generateTypes,
+  registerFieldResolver,
+  deleteResultType,
+} from './common.ts';
 import { resolveNames, type TypeNameMapper } from './names.ts';
 
 // ──────────────────────────────────────────────
@@ -17,27 +36,38 @@ import { resolveNames, type TypeNameMapper } from './names.ts';
 // ──────────────────────────────────────────────
 
 function resolveWhere(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL filter input is dynamic
   argsWhere: any,
   meta: EntityMetadata,
   relationMap: RelationMap,
-): { where: Record<string, any> | Record<string, any>[] | undefined; relations: string[] } {
+): {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
+  where: Record<string, any> | Record<string, any>[] | undefined;
+  relations: string[];
+} {
   if (!argsWhere) return { where: undefined, relations: [] };
 
   const columns = meta.ownColumns;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
   const result: Record<string, any> = {};
   const relations: string[] = [];
 
   // Extract OR conditions (TypeORM uses array syntax: where: [clause1, clause2])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
   let orClauses: Record<string, any>[] | undefined;
   if (argsWhere.or || argsWhere.OR) {
     const orKey = argsWhere.or ? 'or' : 'OR';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL filter input is dynamic
     const orParts = argsWhere[orKey] as any[];
     if (orParts?.length) {
       orClauses = orParts
-        .map((w: any) => resolveWhere(w, meta, relationMap))
-        .filter(r => r.where != null && !Array.isArray(r.where))
-        .map(r => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL filter input is dynamic
+        .map((whereClause: any) => resolveWhere(whereClause, meta, relationMap))
+        .filter((r) => r.where != null && !Array.isArray(r.where))
+
+        .map((r) => {
           relations.push(...r.relations);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
           return r.where as Record<string, any>;
         });
       if (orClauses.length === 0) orClauses = undefined;
@@ -49,10 +79,11 @@ function resolveWhere(
     if (value == null) continue;
 
     // Check if this is a relation key
-    const relInfo = relationMap[meta.targetName]?.[key];
-    if (relInfo) {
+    const relationInfo = relationMap[meta.targetName]?.[key];
+    if (relationInfo) {
       // Relation filter — recursively resolve
-      const targetMeta = relInfo.relation.inverseEntityMetadata;
+      const targetMeta = relationInfo.relation.inverseEntityMetadata;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL filter input is dynamic
       const sub = resolveWhere(value as any, targetMeta, relationMap);
       if (sub.where) {
         result[key] = sub.where;
@@ -63,31 +94,62 @@ function resolveWhere(
       continue;
     }
 
-    // ownColumn filter with operators
+    // Own column filter with operators
     if (typeof value === 'object' && value !== null) {
-      const col = columns.find((c: any) => c.propertyName === key);
-      if (!col) continue;
-      for (const [op, val] of Object.entries(value as Record<string, any>)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- EntityMetadata column type
+      const column = columns.find((column: any) => column.propertyName === key);
+      if (!column) continue;
+
+      for (const [operator, val] of Object.entries(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
+        value as Record<string, any>,
+      )) {
         if (val === undefined || val === null) continue;
-        switch (op) {
-          case 'eq': result[key] = val; break;
-          case 'ne': result[key] = Not(val); break;
-          case 'lt': result[key] = LessThan(val); break;
-          case 'lte': result[key] = LessThanOrEqual(val); break;
-          case 'gt': result[key] = MoreThan(val); break;
-          case 'gte': result[key] = MoreThanOrEqual(val); break;
-          case 'like': result[key] = Like(val); break;
-          case 'notLike': result[key] = Not(Like(val)); break;
-          case 'ilike': result[key] = Like(val); break;
-          case 'notIlike': result[key] = Not(Like(val)); break;
-          case 'inArray': case 'in':
-            result[key] = In(Array.isArray(val) ? val : [val]); break;
-          case 'notInArray': case 'notIn':
-            result[key] = Not(In(Array.isArray(val) ? val : [val])); break;
+        switch (operator) {
+          case 'eq':
+            result[key] = val;
+            break;
+          case 'ne':
+            result[key] = Not(val);
+            break;
+          case 'lt':
+            result[key] = LessThan(val);
+            break;
+          case 'lte':
+            result[key] = LessThanOrEqual(val);
+            break;
+          case 'gt':
+            result[key] = MoreThan(val);
+            break;
+          case 'gte':
+            result[key] = MoreThanOrEqual(val);
+            break;
+          case 'like':
+            result[key] = Like(val);
+            break;
+          case 'notLike':
+            result[key] = Not(Like(val));
+            break;
+          case 'ilike':
+            result[key] = Like(val);
+            break;
+          case 'notIlike':
+            result[key] = Not(Like(val));
+            break;
+          case 'inArray':
+          case 'in':
+            result[key] = In(Array.isArray(val) ? val : [val]);
+            break;
+          case 'notInArray':
+          case 'notIn':
+            result[key] = Not(In(Array.isArray(val) ? val : [val]));
+            break;
           case 'isNull':
-            result[key] = IsNull(); break;
+            result[key] = IsNull();
+            break;
           case 'isNotNull':
-            result[key] = Not(IsNull()); break;
+            result[key] = Not(IsNull());
+            break;
         }
       }
     }
@@ -107,8 +169,12 @@ function resolveWhere(
  * Convert a flat relation path array to TypeORM's nested object format.
  * ['author', 'author.profile'] → { author: { profile: true } }
  */
-function buildRelationObject(paths: string[]): Record<string, any> | undefined {
+function buildRelationObject(
+  paths: string[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM nested relation object
+): Record<string, any> | undefined {
   if (!paths.length) return undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM nested relation object
   const result: Record<string, any> = {};
   for (const path of paths) {
     const parts = path.split('.');
@@ -118,7 +184,11 @@ function buildRelationObject(paths: string[]): Record<string, any> | undefined {
         current[parts[i]!] = true;
       } else {
         const existing = current[parts[i]!];
-        if (typeof existing !== 'object' || existing === null || existing === true) {
+        if (
+          typeof existing !== 'object' ||
+          existing === null ||
+          existing === true
+        ) {
           current[parts[i]!] = {};
         }
         current = current[parts[i]!];
@@ -133,11 +203,12 @@ function convertOrderBy(
 ): Record<string, 'ASC' | 'DESC'> | undefined {
   if (!orderBy) return undefined;
   const entries = Object.entries(orderBy)
-    .filter(([_, v]) => v != null)
+    .filter(([key, value]) => key != null && value != null)
     .sort((a, b) => (b[1]?.priority ?? 0) - (a[1]?.priority ?? 0));
   if (entries.length === 0) return undefined;
   const result: Record<string, 'ASC' | 'DESC'> = {};
-  for (const [key, val] of entries) result[key] = val!.direction === 'desc' ? 'DESC' : 'ASC';
+  for (const [key, val] of entries)
+    result[key] = val!.direction === 'desc' ? 'DESC' : 'ASC';
   return result;
 }
 
@@ -147,61 +218,132 @@ function convertOrderBy(
 
 export function generateResolvers(
   dataSource: DataSource,
-  entityMetadatas: EntityMetadata[],
+  metadataList: EntityMetadata[],
   relationMap: RelationMap,
   typeNameMapper: TypeNameMapper,
   typeOutputs: ReturnType<typeof generateTypes>,
 ): {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config map
   queries: Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config map
   mutations: Record<string, any>;
-  fieldResolvers: Record<string, Record<string, (...args: any[]) => Promise<any>>>;
+  fieldResolvers: Record<
+    string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
+    Record<string, (...args: any[]) => Promise<any>>
+  >;
 } {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config map
   const queries: Record<string, any> = {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config map
   const mutations: Record<string, any> = {};
-  const fieldResolvers: Record<string, Record<string, (...args: any[]) => Promise<any>>> = {};
+  const fieldResolvers: Record<
+    string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
+    Record<string, (...args: any[]) => Promise<any>>
+  > = {};
 
-  for (const meta of entityMetadatas) {
+  for (const meta of metadataList) {
     const entityName = meta.targetName;
     const names = resolveNames(entityName, typeNameMapper);
     const typeName = names.typeName;
     const selectType = typeOutputs.types[typeName];
     if (!selectType) continue;
 
-    const listType = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(selectType)));
-    const filterInput = typeOutputs.filters[entityName] as GraphQLInputObjectType | undefined;
-    const orderInput = typeOutputs.orders[entityName] as GraphQLInputObjectType | undefined;
-    const insertInput = typeOutputs.insertInputs[entityName] as GraphQLInputObjectType | undefined;
-    const updateInput = typeOutputs.updateInputs[entityName] as GraphQLInputObjectType | undefined;
+    const listType = new GraphQLNonNull(
+      new GraphQLList(new GraphQLNonNull(selectType)),
+    );
+    const filterInput = typeOutputs.filters[entityName] as
+      | GraphQLInputObjectType
+      | undefined;
+    const orderInput = typeOutputs.orders[entityName] as
+      | GraphQLInputObjectType
+      | undefined;
+    const insertInput = typeOutputs.insertInputs[entityName] as
+      | GraphQLInputObjectType
+      | undefined;
+    const updateInput = typeOutputs.updateInputs[entityName] as
+      | GraphQLInputObjectType
+      | undefined;
     const columns = meta.ownColumns;
 
     // ── List ──
-    queries[names.listFieldName] = makeList(dataSource, meta, listType, filterInput, orderInput, columns, relationMap);
+    queries[names.listFieldName] = makeList(
+      dataSource,
+      meta,
+      listType,
+      filterInput,
+      orderInput,
+      columns,
+      relationMap,
+    );
 
     // ── Single ──
-    queries[names.singleFieldName] = makeSingle(dataSource, meta, selectType, filterInput, orderInput, columns, relationMap);
+    queries[names.singleFieldName] = makeSingle(
+      dataSource,
+      meta,
+      selectType,
+      filterInput,
+      orderInput,
+      columns,
+      relationMap,
+    );
 
     // ── Create ──
     if (insertInput) {
-      mutations[names.createArrayFieldName] = makeCreateArray(dataSource, meta, insertInput, listType, columns);
-      mutations[names.createSingleFieldName] = makeCreateSingle(dataSource, meta, insertInput, selectType, columns);
+      mutations[names.createArrayFieldName] = makeCreateArray(
+        dataSource,
+        meta,
+        insertInput,
+        listType,
+        columns,
+      );
+      mutations[names.createSingleFieldName] = makeCreateSingle(
+        dataSource,
+        meta,
+        insertInput,
+        selectType,
+        columns,
+      );
     }
 
     // ── Update ──
     if (updateInput) {
-      mutations[names.updateFieldName] = makeUpdate(dataSource, meta, updateInput, filterInput, listType, columns, relationMap);
+      mutations[names.updateFieldName] = makeUpdate(
+        dataSource,
+        meta,
+        updateInput,
+        filterInput,
+        listType,
+        columns,
+        relationMap,
+      );
     }
 
     // ── Delete ──
-    mutations[names.deleteFieldName] = makeDelete(dataSource, meta, filterInput, listType, columns, relationMap);
+    mutations[names.deleteFieldName] = makeDelete(
+      dataSource,
+      meta,
+      filterInput,
+      listType,
+      columns,
+      relationMap,
+    );
   }
 
   // Field resolvers for relations
-  for (const [entityName, rels] of Object.entries(relationMap)) {
-    const meta = entityMetadatas.find((m) => m.targetName === entityName);
+  for (const [entityName, relations] of Object.entries(relationMap)) {
+    const meta = metadataList.find((m) => m.targetName === entityName);
     if (!meta) continue;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
     const resolvers: Record<string, (...args: any[]) => Promise<any>> = {};
-    for (const [relName, relInfo] of Object.entries(rels)) {
-      resolvers[relName] = createRelationResolver(dataSource, meta, relInfo, relationMap);
+    for (const [relName, relationInfo] of Object.entries(relations)) {
+      resolvers[relName] = createRelationResolver(
+        dataSource,
+        meta,
+        relationInfo,
+        relationMap,
+      );
     }
     if (Object.keys(resolvers).length > 0) {
       fieldResolvers[entityName] = resolvers;
@@ -215,118 +357,242 @@ export function generateResolvers(
 }
 
 // ── Helper: build args for filter/order ──
-function filterArgs(filterInput?: GraphQLInputObjectType, orderInput?: GraphQLInputObjectType, extraOffset = true, extraLimit = false): Record<string, any> {
-  const a: Record<string, any> = {};
-  if (filterInput) a['where'] = { type: filterInput };
-  if (orderInput) a['orderBy'] = { type: orderInput };
-  if (extraOffset) a['offset'] = { type: GraphQLInt };
-  if (extraLimit) a['limit'] = { type: GraphQLInt };
-  return a;
+function filterArgs(
+  filterInput?: GraphQLInputObjectType,
+  orderInput?: GraphQLInputObjectType,
+  extraOffset = true,
+  extraLimit = false,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL arg config map
+): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL arg config map
+  const resultArgs: Record<string, any> = {};
+  if (filterInput) resultArgs['where'] = { type: filterInput };
+  if (orderInput) resultArgs['orderBy'] = { type: orderInput };
+  if (extraOffset) resultArgs['offset'] = { type: GraphQLInt };
+  if (extraLimit) resultArgs['limit'] = { type: GraphQLInt };
+  return resultArgs;
 }
 
-function makeList(ds: DataSource, meta: EntityMetadata, listType: any, fi?: GraphQLInputObjectType, oi?: GraphQLInputObjectType, cols?: EntityMetadata['ownColumns'], relationMap?: RelationMap): any {
+function makeList(
+  dataSource: DataSource,
+  meta: EntityMetadata,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL type is a GraphQL type, not any specific class
+  listType: any,
+  filterInput?: GraphQLInputObjectType,
+  orderInput?: GraphQLInputObjectType,
+  columns?: EntityMetadata['ownColumns'],
+  relationMap?: RelationMap,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config return type
+): any {
   const target = meta.target;
   return {
     type: listType,
-    args: filterArgs(fi, oi, true, true),
-    resolve: async (_s: any, args: any) => {
-      const repo = ds.getRepository(target as any);
+    args: filterArgs(filterInput, orderInput, true, true),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
+    resolve: async (_source: any, args: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
+      const repository = dataSource.getRepository(target as any);
       const resolved = resolveWhere(args['where'], meta, relationMap!);
-      return remapToGraphQLArrayOutput(await repo.find({
-        where: resolved.where as any,
-        relations: buildRelationObject(resolved.relations) as any,
-        order: convertOrderBy(args['orderBy']) as any,
-        skip: args['offset'] ?? undefined,
-        take: args['limit'] ?? undefined,
-      }) as any);
+      return remapToGraphQLArrayOutput(
+        (await repository.find({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
+          where: resolved.where as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsRelations
+          relations: buildRelationObject(resolved.relations) as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM order
+          order: convertOrderBy(args['orderBy']) as any,
+          skip: args['offset'] ?? undefined,
+          take: args['limit'] ?? undefined,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindManyOptions is generic
+        })) as any,
+      );
     },
   };
 }
 
-function makeSingle(ds: DataSource, meta: EntityMetadata, st: GraphQLObjectType, fi?: GraphQLInputObjectType, oi?: GraphQLInputObjectType, cols?: EntityMetadata['ownColumns'], relationMap?: RelationMap): any {
+function makeSingle(
+  dataSource: DataSource,
+  meta: EntityMetadata,
+  singleType: GraphQLObjectType,
+  filterInput?: GraphQLInputObjectType,
+  orderInput?: GraphQLInputObjectType,
+  columns?: EntityMetadata['ownColumns'],
+  relationMap?: RelationMap,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config return type
+): any {
   const target = meta.target;
   return {
-    type: st,
-    args: filterArgs(fi, oi, true, false),
-    resolve: async (_s: any, args: any) => {
-      const repo = ds.getRepository(target as any);
+    type: singleType,
+    args: filterArgs(filterInput, orderInput, true, false),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
+    resolve: async (_source: any, args: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
+      const repository = dataSource.getRepository(target as any);
       const resolved = resolveWhere(args['where'], meta, relationMap!);
-      const result = await repo.findOne({
+      const result = await repository.findOne({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
         where: resolved.where as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsRelations
         relations: buildRelationObject(resolved.relations) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM order
         order: convertOrderBy(args['orderBy']) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOneOptions is generic
       } as any);
       if (!result) return null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity type is generic
       return remapToGraphQLSingleOutput(result as any);
     },
   };
 }
 
-function makeCreateArray(ds: DataSource, meta: EntityMetadata, ii: GraphQLInputObjectType, lt: any, cols: EntityMetadata['ownColumns']): any {
+function makeCreateArray(
+  dataSource: DataSource,
+  meta: EntityMetadata,
+  insertInput: GraphQLInputObjectType,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL type is a GraphQL type, not any specific class
+  listType: any,
+  columns: EntityMetadata['ownColumns'],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config return type
+): any {
   const target = meta.target;
   return {
-    type: lt,
-    args: { values: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(ii))) } },
-    resolve: async (_s: any, args: any) => {
-      const repo = ds.getRepository(target as any);
-      const mapped = remapFromGraphQLArrayInput(args['values'] as any[], cols as any);
-      const saved = await repo.save(repo.create(mapped));
+    type: listType,
+    args: {
+      values: {
+        type: new GraphQLNonNull(
+          new GraphQLList(new GraphQLNonNull(insertInput)),
+        ),
+      },
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
+    resolve: async (_source: any, args: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
+      const repository = dataSource.getRepository(target as any);
+
+      const mapped = remapFromGraphQLArrayInput(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL input array is dynamic
+        args['values'] as any[],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- EntityMetadata column type
+        columns as any,
+      );
+      const saved = await repository.save(repository.create(mapped));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity type is generic
       return remapToGraphQLArrayOutput(saved as any);
     },
   };
 }
 
-function makeCreateSingle(ds: DataSource, meta: EntityMetadata, ii: GraphQLInputObjectType, st: GraphQLObjectType, cols: EntityMetadata['ownColumns']): any {
+function makeCreateSingle(
+  dataSource: DataSource,
+  meta: EntityMetadata,
+  insertInput: GraphQLInputObjectType,
+  singleType: GraphQLObjectType,
+  columns: EntityMetadata['ownColumns'],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config return type
+): any {
   const target = meta.target;
   return {
-    type: st,
-    args: { values: { type: new GraphQLNonNull(ii) } },
-    resolve: async (_s: any, args: any) => {
-      const repo = ds.getRepository(target as any);
-      const mapped = remapFromGraphQLSingleInput(args['values'] as any, cols as any);
-      const saved = await repo.save(repo.create(mapped));
+    type: singleType,
+    args: { values: { type: new GraphQLNonNull(insertInput) } },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
+    resolve: async (_source: any, args: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
+      const repository = dataSource.getRepository(target as any);
+
+      const mapped = remapFromGraphQLSingleInput(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL input is dynamic
+        args['values'] as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- EntityMetadata column type
+        columns as any,
+      );
+      const saved = await repository.save(repository.create(mapped));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity type is generic
       return remapToGraphQLSingleOutput(saved as any);
     },
   };
 }
 
-function makeUpdate(ds: DataSource, meta: EntityMetadata, ui: GraphQLInputObjectType, fi: GraphQLInputObjectType | undefined, lt: any, cols: EntityMetadata['ownColumns'], relationMap?: RelationMap): any {
+function makeUpdate(
+  dataSource: DataSource,
+  meta: EntityMetadata,
+  updateInput: GraphQLInputObjectType,
+  filterInput: GraphQLInputObjectType | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL type is a GraphQL type, not any specific class
+  listType: any,
+  columns: EntityMetadata['ownColumns'],
+  relationMap?: RelationMap,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config return type
+): any {
   const target = meta.target;
-  const args: Record<string, any> = { set: { type: new GraphQLNonNull(ui) } };
-  if (fi) args['where'] = { type: fi };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL arg config map
+  const args: Record<string, any> = {
+    set: { type: new GraphQLNonNull(updateInput) },
+  };
+  if (filterInput) args['where'] = { type: filterInput };
   return {
-    type: lt,
+    type: listType,
     args,
-    resolve: async (_s: any, args: any) => {
-      const repo = ds.getRepository(target as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
+    resolve: async (_source: any, args: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
+      const repository = dataSource.getRepository(target as any);
       const resolved = resolveWhere(args['where'], meta, relationMap!);
-      const entities = await repo.find({
+      const entities = await repository.find({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
         where: resolved.where as any,
-        relations: resolved.relations.length > 0 ? resolved.relations : undefined as any,
+        relations:
+          resolved.relations.length > 0
+            ? resolved.relations
+            : // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsRelations
+              (undefined as any),
       });
       if (!entities.length) return [];
-      const mapped = remapFromGraphQLSingleInput(args['set'] as any, cols as any);
-      for (const e of entities) Object.assign(e, mapped);
-      return remapToGraphQLArrayOutput(await repo.save(entities) as any);
+
+      const mapped = remapFromGraphQLSingleInput(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL input is dynamic
+        args['set'] as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- EntityMetadata column type
+        columns as any,
+      );
+      for (const entity of entities) Object.assign(entity, mapped);
+
+      return remapToGraphQLArrayOutput(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity type is generic
+        (await repository.save(entities)) as any,
+      );
     },
   };
 }
 
-function makeDelete(ds: DataSource, meta: EntityMetadata, fi: GraphQLInputObjectType | undefined, _lt: any, cols: EntityMetadata['ownColumns'], relationMap: RelationMap): any {
+function makeDelete(
+  dataSource: DataSource,
+  meta: EntityMetadata,
+  filterInput: GraphQLInputObjectType | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL type is a GraphQL type, not any specific class
+  _listType: any,
+  columns: EntityMetadata['ownColumns'],
+  relationMap: RelationMap,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config return type
+): any {
   const target = meta.target;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL arg config map
   const args: Record<string, any> = {};
-  if (fi) args['where'] = { type: fi };
+  if (filterInput) args['where'] = { type: filterInput };
   return {
     type: deleteResultType,
     args,
-    resolve: async (_s: any, args: any) => {
-      const repo = ds.getRepository(target as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
+    resolve: async (_source: any, args: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
+      const repository = dataSource.getRepository(target as any);
       const resolved = resolveWhere(args['where'], meta, relationMap);
       if (!resolved.where) return { affected: 0, raw: [] };
-      const result = await repo.delete(resolved.where as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
+      const result = await repository.delete(resolved.where as any);
       return {
         affected: result.affected ?? 0,
-        raw: (result.raw ?? []).map((r: any) => String(r)),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM delete result is generic
+        raw: (result.raw ?? []).map((row: any) => String(row)),
       };
     },
   };
@@ -337,63 +603,66 @@ function makeDelete(ds: DataSource, meta: EntityMetadata, fi: GraphQLInputObject
 // ──────────────────────────────────────────────
 
 function createRelationResolver(
-  ds: DataSource,
+  dataSource: DataSource,
   meta: EntityMetadata,
-  relInfo: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM relation metadata
+  relationInfo: any,
   relationMap: RelationMap,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
 ): (...args: any[]) => Promise<any> {
-  const propertyName = relInfo.relation.propertyName;
-  const isList = !relInfo.isOne;
-  const isManyToMany = relInfo.relation.relationType === 'many-to-many';
-  const targetMeta = relInfo.relation.inverseEntityMetadata;
-  const targetPk = targetMeta.primaryColumns[0];
-  const targetRepo = ds.getRepository(targetMeta.target as any);
-  const sourceRepo = ds.getRepository(meta.target as any);
+  const propertyName = relationInfo.relation.propertyName;
+  const isManyToMany = relationInfo.relation.relationType === 'many-to-many';
+  const targetMeta = relationInfo.relation.inverseEntityMetadata;
+  const targetPrimaryKey = targetMeta.primaryColumns[0];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
+  const targetRepository = dataSource.getRepository(targetMeta.target as any);
 
-  // Determine FK details from foreignKey metadata
-  // For owning side (ManyToOne): fkOwner = meta, pk = targetPk
-  // For inverse side (OneToMany): fkOwner = targetMeta, pk = meta PK
-  // fkPropertyName = the propertyName on the FK owner entity that holds the FK scalar value
-  //   For @JoinColumn({ name: 'authorId' }) => propertyName = 'author' (the relation)
-  //   For @Column() authorId on owning side => propertyName = 'authorId'
-  let fkPropertyName: string | undefined;
+  // Determine foreign key details from foreignKey metadata
+  let foreignKeyPropertyName: string | undefined;
 
   if (!isManyToMany) {
-    const fkOwner = relInfo.isOwning ? meta : targetMeta;
-    const fkTarget = relInfo.isOwning ? targetMeta : meta;
-    const pk = fkTarget.primaryColumns[0];
-    if (pk) {
-      for (const fk of fkOwner.foreignKeys) {
-        if (fk.referencedColumns.includes(pk)) {
-          const fkCol = fk.columns[0];
-          // Try to find a column whose propertyName matches fkCol.propertyName
-          // If the join column's propertyName equals the relation name, we need to
-          // check if there's also a standalone @Column with a different property name
-          // but matching databaseName (e.g. user defined @Column() authorId)
-          const matchingCol = fkOwner.ownColumns.find(
-            (c: any) => c.databaseName === fkCol?.databaseName && c.propertyName !== propertyName,
+    const foreignKeyOwner = relationInfo.isOwning ? meta : targetMeta;
+    const foreignKeyTarget = relationInfo.isOwning ? targetMeta : meta;
+    const primaryKey = foreignKeyTarget.primaryColumns[0];
+    if (primaryKey) {
+      for (const foreignKey of foreignKeyOwner.foreignKeys) {
+        if (foreignKey.referencedColumns.includes(primaryKey)) {
+          const foreignKeyColumn = foreignKey.columns[0];
+          // Check if there's a standalone @Column with a different property name
+          const matchingColumn = foreignKeyOwner.ownColumns.find(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- EntityMetadata column type
+            (column: any) =>
+              column.databaseName === foreignKeyColumn?.databaseName &&
+              column.propertyName !== propertyName,
           );
-          // Prefer the standalone column if found, otherwise use the join column's property
-          fkPropertyName = matchingCol?.propertyName ?? fkCol?.propertyName;
+          foreignKeyPropertyName =
+            matchingColumn?.propertyName ?? foreignKeyColumn?.propertyName;
           break;
         }
       }
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
   return async (source: any, args: any, context: any) => {
     // Check if relation-specific args are provided
-    const hasArgs = args && (args.where || args.orderBy || args.limit !== undefined || args.offset !== undefined);
+    const hasArgs =
+      args &&
+      (args.where ||
+        args.orderBy ||
+        args.limit !== undefined ||
+        args.offset !== undefined);
 
     // If data is pre-loaded on source and no args, use it directly
     if (source[propertyName] !== undefined && !hasArgs) {
       return source[propertyName];
     }
 
-    const srcPkCol = meta.primaryColumns[0];
-    if (!srcPkCol) return isList ? [] : null;
+    const sourcePrimaryKeyColumn = meta.primaryColumns[0];
+    if (!sourcePrimaryKeyColumn) return relationInfo.isOne ? null : [];
 
     // Parse relation args
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
     let resolvedWhere: any = undefined;
     if (args?.where) {
       const sub = resolveWhere(args.where, targetMeta, relationMap);
@@ -404,28 +673,35 @@ function createRelationResolver(
     const skip = args?.offset ?? undefined;
 
     if (isManyToMany) {
-      const pkValue = source[srcPkCol.propertyName];
-      if (pkValue == null) return [];
-      const jt = relInfo.relation.junctionEntityMetadata?.tableName;
-      const jc = relInfo.relation.joinColumns?.[0]?.propertyName;
-      const tpk = targetPk?.propertyName;
-      if (!jt || !jc || !tpk) return [];
+      const primaryKeyValue = source[sourcePrimaryKeyColumn.propertyName];
+      if (primaryKeyValue == null) return [];
+      const junctionTable =
+        relationInfo.relation.junctionEntityMetadata?.tableName;
+      const joinColumn = relationInfo.relation.joinColumns?.[0]?.propertyName;
+      const targetPrimaryKeyName = targetPrimaryKey?.propertyName;
+      if (!junctionTable || !joinColumn || !targetPrimaryKeyName) return [];
 
       if (hasArgs) {
-        // With args: use QueryBuilder with junction table join + additional filters
-        let query = targetRepo.createQueryBuilder('t')
-          .innerJoin(jt, 'j', `"j"."${tpk}" = "t"."${tpk}"`)
-          .where(`"j"."${jc}" = :pkValue`, { pkValue });
+        let query = targetRepository
+          .createQueryBuilder('t')
+          .innerJoin(
+            junctionTable,
+            'junction',
+            `"junction"."${targetPrimaryKeyName}" = "t"."${targetPrimaryKeyName}"`,
+          )
+          .where(`"junction"."${joinColumn}" = :primaryKeyValue`, {
+            primaryKeyValue,
+          });
         if (resolvedWhere) {
-          // Apply additional where clauses via andWhere
-          // For each key in resolvedWhere, add as AND condition
-          for (const [whereKey, whereVal] of Object.entries(resolvedWhere)) {
-            query = query.andWhere(`"t"."${whereKey}" = :${whereKey}`, { [whereKey]: whereVal });
+          for (const [whereKey, whereValue] of Object.entries(resolvedWhere)) {
+            query = query.andWhere(`"t"."${whereKey}" = :${whereKey}`, {
+              [whereKey]: whereValue,
+            });
           }
         }
         if (order) {
-          for (const [orderKey, orderDir] of Object.entries(order)) {
-            query = query.addOrderBy(`"t"."${orderKey}"`, orderDir);
+          for (const [orderKey, orderDirection] of Object.entries(order)) {
+            query = query.addOrderBy(`"t"."${orderKey}"`, orderDirection);
           }
         }
         if (take) query = query.take(take);
@@ -433,71 +709,92 @@ function createRelationResolver(
         return query.getMany();
       }
 
-      // No args: use QueryBuilder with junction table join (same as before)
-      return targetRepo.createQueryBuilder('t')
-        .innerJoin(jt, 'j', `"j"."${tpk}" = "t"."${tpk}"`)
-        .where(`"j"."${jc}" IN (:...ids)`, { ids: [pkValue] })
+      return targetRepository
+        .createQueryBuilder('t')
+        .innerJoin(
+          junctionTable,
+          'junction',
+          `"junction"."${targetPrimaryKeyName}" = "t"."${targetPrimaryKeyName}"`,
+        )
+        .where(`"junction"."${joinColumn}" IN (:...ids)`, {
+          ids: [primaryKeyValue],
+        })
         .getMany();
     }
 
-    if (relInfo.isOwning) {
+    if (relationInfo.isOwning) {
       // ManyToOne — single entity, ignore args, keep batch loader
-      // (relationMap is unused for ManyToOne; only needed for OneToMany/MTM)
-      if (hasArgs) {
-        // ManyToOne with args is unsupported (single entity)
-        // Fall through to batch loader — args are silently ignored for singular relations
-      }
-      const fkValue = fkPropertyName ? source[fkPropertyName] : undefined;
-      if (fkValue == null) return null;
-      const targetPkName = targetPk?.propertyName;
-      if (!targetPkName) return null;
+      const foreignKeyValue = foreignKeyPropertyName
+        ? source[foreignKeyPropertyName]
+        : undefined;
+      if (foreignKeyValue == null) return null;
+      const targetPrimaryKeyName = targetPrimaryKey?.propertyName;
+      if (!targetPrimaryKeyName) return null;
 
       const loader = getOrCreateLoader(
         context,
         `${meta.targetName}::${propertyName}`,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Batch loader keys are generic
         async (keys: readonly any[]) => {
           const unique = [...new Set(keys)];
-          const results = await (targetRepo as any).find({ where: { [targetPkName]: In(unique) } });
-          const byId = new Map(results.map((r: any) => [String(r[targetPkName]), r]));
-          return keys.map(k => byId.get(String(k)) ?? null);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM repository generics
+          const results = await (targetRepository as any).find({
+            where: { [targetPrimaryKeyName]: In(unique) },
+          });
+          const byId = new Map(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity type is generic
+            results.map((row: any) => [String(row[targetPrimaryKeyName]), row]),
+          );
+          return keys.map((key) => byId.get(String(key)) ?? null);
         },
       );
-      return loader.load(fkValue);
+      return loader.load(foreignKeyValue);
     } else {
       // OneToMany — check hasArgs
-      const pkValue = source[srcPkCol.propertyName];
-      if (pkValue == null || !fkPropertyName) return [];
+      const primaryKeyValue = source[sourcePrimaryKeyColumn.propertyName];
+      if (primaryKeyValue == null || !foreignKeyPropertyName) return [];
 
       if (hasArgs) {
         // Direct query with args
+
         const whereClause = resolvedWhere
-          ? { ...resolvedWhere, [fkPropertyName!]: pkValue }
-          : { [fkPropertyName!]: pkValue } as any;
-        return (targetRepo as any).find({
+          ? { ...resolvedWhere, [foreignKeyPropertyName]: primaryKeyValue }
+          : // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
+            ({ [foreignKeyPropertyName]: primaryKeyValue } as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM repository generics
+        return (targetRepository as any).find({
           where: whereClause,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM order
           order: order as any,
           take,
           skip,
         });
       }
 
-      // Batch loaded (no args) — same as before
+      // Batch loaded (no args)
       const loader = getOrCreateLoader(
         context,
         `${meta.targetName}::${propertyName}`,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Batch loader keys are generic
         async (keys: readonly any[]) => {
           const unique = [...new Set(keys)];
-          const results = await (targetRepo as any).find({ where: { [fkPropertyName!]: In(unique) } });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM repository generics
+          const results = await (targetRepository as any).find({
+            where: { [foreignKeyPropertyName]: In(unique) },
+          });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity type is generic
           const grouped = new Map<string, any[]>();
           for (const id of unique) grouped.set(String(id), []);
+
           for (const row of results) {
-            const pid = (row as any)[fkPropertyName!];
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity type is generic
+            const pid = (row as any)[foreignKeyPropertyName];
             if (pid !== undefined) grouped.get(String(pid))?.push(row);
           }
-          return keys.map(k => grouped.get(String(k)) ?? []);
+          return keys.map((key) => grouped.get(String(key)) ?? []);
         },
       );
-      return loader.load(pkValue);
+      return loader.load(primaryKeyValue);
     }
   };
 }

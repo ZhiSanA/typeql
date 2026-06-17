@@ -15,7 +15,9 @@ export interface GeneratedData {
 }
 
 export interface GeneratedEntities {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config types are dynamic
   queries: Record<string, GraphQLFieldConfig<any, any>>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config types are dynamic
   mutations: Record<string, GraphQLFieldConfig<any, any>>;
   inputs: Record<string, GraphQLInputObjectType | GraphQLObjectType>;
   types: Record<string, GraphQLObjectType>;
@@ -23,7 +25,13 @@ export interface GeneratedEntities {
     string,
     Record<
       string,
-      (source: any, args: any, context: any, info: any) => Promise<any>
+      (
+        source: unknown,
+        args: unknown,
+        context: unknown,
+        info: unknown,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Resolver return types are dynamic
+      ) => Promise<any>
     >
   >;
 }
@@ -37,7 +45,7 @@ export interface BuildSchemaConfig {
    * Restrict generated queries/mutations to specific entity classes.
    * Default: all entities registered on the DataSource.
    */
-  entities?: Function[];
+  entities?: Array<new (...args: unknown[]) => unknown>;
 
   /**
    * Set to false to omit the Mutation type.
@@ -73,6 +81,7 @@ export interface BuildSchemaConfig {
 // Resolver type helpers (public)
 // ──────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- filter values vary by field type
 export type Filters = Record<string, any>;
 
 export type OrderByArgs = Record<

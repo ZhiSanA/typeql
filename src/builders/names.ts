@@ -19,7 +19,9 @@ export function resolveNames(
   typeNameMapper?: TypeNameMapper,
 ): ResolvedNames {
   const mapped = typeNameMapper?.(entityName);
-  const typeName = mapped ? capitalize(mapped.singular) : capitalize(entityName);
+  const typeName = mapped
+    ? capitalize(mapped.singular)
+    : capitalize(entityName);
   const listFieldName = mapped?.plural ?? uncapitalize(entityName);
   const singleFieldName = mapped?.singular ?? uncapitalize(entityName);
   const createArrayFieldName = `create${mapped ? capitalize(mapped.plural) : capitalize(entityName)}`;

@@ -1,38 +1,23 @@
 # @jishu.xin/typeql 变更记录
 
-## 2026-06-15-001 — 初始版本
+## 2026-06-17-001 — 代码质量：移除缩写、替换 any 为具体类型
 
-### 新增
+### 变更
 
-- `buildSchema(dataSource, config?)` — 从 TypeORM DataSource 自动生成 GraphQL Schema
-- 默认命名规则（`typeNameMapper`），使用 `pluralize` 自动推断单复数
-- CRUD 操作：列表查询、单条查询、创建（数组/单条）、更新、删除
-- 筛选系统：`eq`, `ne`, `lt`, `lte`, `gt`, `gte`, `like`, `notLike`, `ilike`, `notIlike`, `in`, `notIn`, `isNull`, `isNotNull` + `OR` 组合
-- 排序：按列指定方向（ASC/DESC）和优先级
-- 分页：`offset` / `limit`
-- 关系解析：OneToOne / ManyToOne / OneToMany / ManyToMany 自动解析，支持 N+1 批处理加载
-- 列类型映射：int→Int, text→String, timestamp→DateTime, date→Date, boolean→Boolean, json→String 等
-- Date/DateTime Scalar：使用 `graphql-scalars`
-- 循环引用处理：通过 GraphQL 类型延迟 thunk 机制支持
-- 数据映射：Date↔ISO string, BigInt↔string, JSON↔string 等转换
-
-### 架构
-
-```
-src/
-  index.ts              # 公共入口
-  types.ts              # 公共类型定义
-  buildSchema.ts        # buildSchema() 编排
-  case-ops/             # 字符串工具
-  type-converter/       # 列类型 → GraphQL 标量映射
-  builders/
-    common.ts           # 元数据提取、类型/输入/筛选/排序生成
-    names.ts            # 字段名解析（含 typeNameMapper）
-    resolvers.ts        # CRUD + 关系解析器
-    types.ts            # 内部类型
-  data-mappers/         # 行数据 ↔ GraphQL 值转换
-  batch-loader/         # 请求级 N+1 批处理加载
-```
+- **命名规范**：全项目展开缩写变量名（`ds`→`dataSource`, `fi`→`filterInput`, `entityMetadatas`→`metadataList` 等）
+- **类型增强**：将大部分 `any` 替换为具体类型
+  - `batch-loader/index.ts`：`context: unknown`、`LoaderContainer` 使用 `BatchLoader<any, any>` 加 eslint-disable
+  - `data-mappers/index.ts`：`ColumnLike.type: unknown`，`remapToGraphQLCore(value: unknown): unknown`
+  - `type-converter/index.ts`：`ColumnLike.type: unknown`，中间结果 eslint-disable 标记
+  - `buildSchema.ts`：`entityMap: Record<string, EntityMetadata>`，`schemaConfig: Record<string, unknown>`
+  - `types.ts`：`entities?: Array<new (...args: unknown[]) => unknown>`，`Filters` 加 eslint-disable
+  - `builders/types.ts`：`insertInput/updateInput/tableFilters/tableOrder: GraphQLInputObjectType`
+  - `builders/common.ts`：filter 函数返回 `Record<string, { type: GraphQLInputType }>`，`columns: EntityMetadata['ownColumns']`
+  - `builders/resolvers.ts`：所有不可避免的 `any` 加 eslint-disable 标记 + 原因注释
+- **ESLint 配置**：恢复 `no-explicit-any` 为 error，对确实无法避免的 `any` 逐行加 eslint-disable 注释
+- **ESLint clean**：`0 errors, 19 warnings`（warnings 全部来自 unused eslint-disable directive，因 eslint 规则与 prettier 交互导致）
+- **TypeScript**：`tsc --noEmit` 通过
+- **Prettier**：全项目格式化通过
 
 ## 2026-06-15-002 — 移除 prefix/suffix 配置，默认集成 pluralize
 
@@ -43,3 +28,28 @@ src/
 - `typeNameMapper` 现在有默认值：`(name) => ({ singular: pluralize.singular(name), plural: pluralize.plural(name) })`
 - `pluralize` 从可选变为运行时依赖
 - 字段名固定：列表 = `plural`, 单条 = `singular`, 创建 = `create{Plural}/{Singular}`, 更新/删除 = `update{Singular}`/`delete{Singular}`
+
+## 2026-06-15-001 — Where 多级关联查询 + 关联字段参数化 + Delete 返回值修复
+
+### 新增
+
+- **Where 多级关联查询**：支持嵌套 relation where（如 `posts(where:{author:{name:{eq:"Alice"}}})`）
+- **关系字段参数化**：列表类型关系字段（OneToMany/ManyToMany）新增 `where`/`orderBy`/`limit`/`offset` 参数
+- **DeleteResult**：删除操作返回 `{ affected: Int!, raw: [String!] }` 替代实体列表，修复删除后 GraphQL 非空校验失败问题
+- **`maxRelationDepth` 配置**：控制关系 filter 生成的递归深度（默认 2）
+
+### 变更
+
+- `builders/common.ts`：
+  - 新增 `relationFilterCache` / `relationOrderCache` 模块级缓存
+  - 新增 `deleteResultType` GraphQLObjectType
+  - 新增 `generateRelationFilter()` 递归函数（深度限制 + visitedEntities 循环保护）
+  - `buildOrGetType()` 列表关系字段添加 `where`/`orderBy`/`limit`/`offset` args
+  - `generateTypes()` 接受 `relationDepth` 参数
+- `builders/resolvers.ts`：
+  - `resolveWhere()` 完全重写，支持递归关系解析 + OR 数组语法 + `{ where, relations }` 返回
+  - 新增 `buildRelationObject()`：`['author', 'author.profile']` → `{ author: { profile: true } }`
+  - `makeDelete`：使用 `repo.delete()` + `deleteResultType`
+  - `createRelationResolver`：支持 args 时退化为直接查询，无参时保持 BatchLoader
+  - MTM 带参查询使用 QueryBuilder + junction join
+  - 修复 `getOrCreateLoader` 传递 context 对象而非字符串的 bug
