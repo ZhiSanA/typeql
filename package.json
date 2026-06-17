@@ -1,7 +1,9 @@
 {
   "name": "@jishu.xin/typeql",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "type": "module",
+  "repository": "https://github.com/ZhiSanA/typeql",
+  "author": "纸伞下的烟雨 <wo@jishu.xin>",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
