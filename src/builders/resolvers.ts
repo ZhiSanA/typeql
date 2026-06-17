@@ -408,7 +408,7 @@ function makeList(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindManyOptions is generic
       } as any);
       return {
-        records: remapToGraphQLArrayOutput(records as any),
+        rows: remapToGraphQLArrayOutput(records as any),
         pagination: {
           limit: args['limit'] ?? count,
           offset: args['offset'] ?? 0,

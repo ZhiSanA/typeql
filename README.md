@@ -64,7 +64,7 @@ const { schema, entities } = buildSchema(dataSource);
 # 列表查询（带分页信息）
 query {
   users(where: { name: { like: "%Alice%" } }, limit: 10, offset: 0) {
-    records {
+    rows {
       id
       name
     }
@@ -126,14 +126,14 @@ mutation {
 
 | 操作     | Query/Mutation | 说明                                          |
 | -------- | -------------- | --------------------------------------------- |
-| 列表查询 | `users`        | 返回 `{ records, pagination }`，支持过滤、排序、分页 |
+| 列表查询 | `users`        | 返回 `{ rows, pagination }`，支持过滤、排序、分页 |
 | 单条查询 | `user`         | 支持过滤、排序                                |
 | 批量创建 | `createUsers`  | 一次创建多条记录                              |
 | 单条创建 | `createUser`   | 创建单条记录                                  |
 | 更新     | `updateUser`   | 按条件批量更新                                |
 | 删除     | `deleteUser`   | 按条件批量删除，返回 `DeleteResult`           |
 
-> **列表查询**的返回类型为 `{TypeName}ListResult`，包含 `records: [Type]!`（数据列表）和 `pagination: Pagination!`（分页信息）。`Pagination` 包含 `limit`、`offset`（实际传入的参数）和 `count`（符合条件的总记录数）。
+> **列表查询**的返回类型为 `{TypeName}ListResult`，包含 `rows: [Type]!`（数据列表）和 `pagination: Pagination!`（分页信息）。`Pagination` 包含 `limit`、`offset`（实际传入的参数）和 `count`（符合条件的总记录数）。
 
 ### 2. 强大的过滤能力
 
@@ -225,7 +225,7 @@ query {
     limit: 20
     offset: 0
   ) {
-    records {
+    rows {
       id
       name
     }

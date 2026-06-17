@@ -521,7 +521,7 @@ export function buildTableTypes(
   const listResultType = new GraphQLObjectType({
     name: `${typeName}ListResult`,
     fields: {
-      records: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(outputType))) },
+      rows: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(outputType))) },
       pagination: { type: new GraphQLNonNull(paginationType) },
     },
   });
