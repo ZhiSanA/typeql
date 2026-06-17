@@ -1,6 +1,6 @@
 {
   "name": "@jishu.xin/typeql",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "type": "module",
   "repository": "https://github.com/ZhiSanA/typeql",
   "author": "纸伞下的烟雨 <wo@jishu.xin>",
@@ -26,22 +26,22 @@
   "devDependencies": {
     "@apollo/server": "^5.5.1",
     "@eslint/js": "^10.0.1",
-    "@rslib/core": "^0.22.0",
-    "@types/node": "^24.12.4",
+    "@rslib/core": "^0.23.0",
+    "@types/node": "^25.9.3",
     "@types/pluralize": "^0.0.33",
-    "eslint": "^10.3.0",
+    "eslint": "^10.5.0",
     "globals": "^17.6.0",
-    "prettier": "^3.8.3",
+    "prettier": "^3.8.4",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.1",
+    "typescript-eslint": "^8.61.1",
     "@types/better-sqlite3": "^7.6.13",
-    "better-sqlite3": "^12.10.0"
+    "better-sqlite3": "^12.11.1"
   },
   "private": false,
   "dependencies": {
     "es-toolkit": "^1.47.1",
-    "graphql": "^16.14.2",
+    "graphql": "^17.0.1",
     "graphql-scalars": "^1.25.0",
     "pluralize": "^8.0.0",
     "typeorm": "^1.0.0"
