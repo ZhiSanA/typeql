@@ -253,6 +253,9 @@ export function generateResolvers(
     const listType = new GraphQLNonNull(
       new GraphQLList(new GraphQLNonNull(selectType)),
     );
+    const listResultType = typeOutputs.listResultTypes[entityName] as
+      | GraphQLObjectType
+      | undefined;
     const filterInput = typeOutputs.filters[entityName] as
       | GraphQLInputObjectType
       | undefined;
@@ -271,7 +274,7 @@ export function generateResolvers(
     queries[names.listFieldName] = makeList(
       dataSource,
       meta,
-      listType,
+      listResultType ?? listType,
       filterInput,
       orderInput,
       columns,
@@ -377,7 +380,7 @@ function makeList(
   dataSource: DataSource,
   meta: EntityMetadata,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL type is a GraphQL type, not any specific class
-  listType: any,
+  resultType: any,
   filterInput?: GraphQLInputObjectType,
   orderInput?: GraphQLInputObjectType,
   columns?: EntityMetadata['ownColumns'],
@@ -386,26 +389,32 @@ function makeList(
 ): any {
   const target = meta.target;
   return {
-    type: listType,
+    type: resultType,
     args: filterArgs(filterInput, orderInput, true, true),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
     resolve: async (_source: any, args: any) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
       const repository = dataSource.getRepository(target as any);
       const resolved = resolveWhere(args['where'], meta, relationMap!);
-      return remapToGraphQLArrayOutput(
-        (await repository.find({
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
-          where: resolved.where as any,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsRelations
-          relations: buildRelationObject(resolved.relations) as any,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM order
-          order: convertOrderBy(args['orderBy']) as any,
-          skip: args['offset'] ?? undefined,
-          take: args['limit'] ?? undefined,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindManyOptions is generic
-        })) as any,
-      );
+      const [records, count] = await repository.findAndCount({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
+        where: resolved.where as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsRelations
+        relations: buildRelationObject(resolved.relations) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM order
+        order: convertOrderBy(args['orderBy']) as any,
+        skip: args['offset'] ?? undefined,
+        take: args['limit'] ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindManyOptions is generic
+      } as any);
+      return {
+        records: remapToGraphQLArrayOutput(records as any),
+        pagination: {
+          limit: args['limit'] ?? count,
+          offset: args['offset'] ?? 0,
+          count,
+        },
+      };
     },
   };
 }

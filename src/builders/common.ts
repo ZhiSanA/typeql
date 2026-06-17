@@ -256,6 +256,16 @@ export function registerFieldResolver(
 export const relationFilterCache = new Map<string, GraphQLInputObjectType>();
 export const relationOrderCache = new Map<string, GraphQLInputObjectType>();
 
+// ── Shared Pagination type ──
+export const paginationType = new GraphQLObjectType({
+  name: 'Pagination',
+  fields: {
+    limit: { type: new GraphQLNonNull(GraphQLInt) },
+    offset: { type: new GraphQLNonNull(GraphQLInt) },
+    count: { type: new GraphQLNonNull(GraphQLInt) },
+  },
+});
+
 // ── DeleteResult type ──
 export const deleteResultType = new GraphQLObjectType({
   name: 'DeleteResult',
@@ -355,6 +365,7 @@ export interface EntityTypeBundle {
   updateInput: GraphQLInputObjectType;
   filterInput: GraphQLInputObjectType;
   orderInput: GraphQLInputObjectType;
+  listResultType: GraphQLObjectType;
 }
 
 export function buildTableTypes(
@@ -506,12 +517,22 @@ export function buildTableTypes(
   });
   relationOrderCache.set(entityName, orderInput);
 
+    // ── List result type ──
+  const listResultType = new GraphQLObjectType({
+    name: `${typeName}ListResult`,
+    fields: {
+      records: { type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(outputType))) },
+      pagination: { type: new GraphQLNonNull(paginationType) },
+    },
+  });
+
   return {
     outputType,
     insertInput,
     updateInput,
     filterInput,
     orderInput,
+    listResultType,
     relationFields: {},
   };
 }
@@ -655,6 +676,7 @@ export function generateTypes(
   orders: Record<string, GraphQLInputObjectType>;
   insertInputs: Record<string, GraphQLInputObjectType>;
   updateInputs: Record<string, GraphQLInputObjectType>;
+  listResultTypes: Record<string, GraphQLObjectType>;
 } {
   const types: Record<string, GraphQLObjectType> = {};
   const inputs: Record<string, GraphQLInputObjectType> = {};
@@ -662,6 +684,7 @@ export function generateTypes(
   const orders: Record<string, GraphQLInputObjectType> = {};
   const insertInputs: Record<string, GraphQLInputObjectType> = {};
   const updateInputs: Record<string, GraphQLInputObjectType> = {};
+  const listResultTypes: Record<string, GraphQLObjectType> = {};
 
   for (const meta of metadataList) {
     const names = resolveNames(meta.targetName, typeNameMapper);
@@ -678,11 +701,12 @@ export function generateTypes(
     updateInputs[meta.targetName] = bundle.updateInput;
     filters[meta.targetName] = bundle.filterInput;
     orders[meta.targetName] = bundle.orderInput;
+    listResultTypes[meta.targetName] = bundle.listResultType;
     inputs[bundle.insertInput.name] = bundle.insertInput;
     inputs[bundle.updateInput.name] = bundle.updateInput;
     inputs[bundle.filterInput.name] = bundle.filterInput;
     inputs[bundle.orderInput.name] = bundle.orderInput;
   }
 
-  return { types, inputs, filters, orders, insertInputs, updateInputs };
+  return { types, inputs, filters, orders, insertInputs, updateInputs, listResultTypes };
 }

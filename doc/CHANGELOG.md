@@ -1,5 +1,32 @@
 # @jishu.xin/typeql 变更记录
 
+## 2026-06-17-003 — 列表查询返回分页信息 (records + pagination)
+
+### 不兼容变更
+
+列表查询的返回类型从 `[Type]!` 改为 `{TypeName}ListResult`：
+
+```graphql
+# 之前
+{ users { id, name } }
+
+# 之后
+{ users { records { id, name }, pagination { limit, offset, count } } }
+```
+
+### 新增
+
+- **`Pagination` 类型**：包含 `limit`、`offset`（实际请求的值）、`count`（总记录数）
+- **`{TypeName}ListResult` 类型**：每个实体自动生成，包含 `records: [Type]!` 和 `pagination: Pagination!`
+- `makeList` 内部改用 `repository.findAndCount()`，一次查询同时返回数据和总记录数
+
+### 变更
+
+- `common.ts`：新增 `paginationType` 公共 GraphQLObjectType；`EntityTypeBundle` 新增 `listResultType`；`generateTypes` 返回值新增 `listResultTypes`
+- `resolvers.ts`：`makeList` 返回 `{ records, pagination }` 替代原来的直接返回数组
+
+---
+
 ## 2026-06-17-002 — 修复 simple-enum 支持 + school 模型端到端验证
 
 ### 修复
