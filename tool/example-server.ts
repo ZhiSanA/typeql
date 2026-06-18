@@ -246,7 +246,7 @@ console.log(
 );
 console.log(`\n# Create a post`);
 console.log(
-  `curl -X POST '${url}' -H 'Content-Type: application/json' -H 'x-apollo-operation-name: blog' -d '{"query":"mutation{createPost(values:{title:\\"New Post\\",authorId:1}){id title}}"}'`,
+  `curl -X POST '${url}' -H 'Content-Type: application/json' -H 'x-apollo-operation-name: blog' -d '{"query":"mutation{createPost(value:{title:\\"New Post\\",authorId:1}){id title}}"}'`,
 );
 console.log(`\n# Delete posts`);
 console.log(
@@ -266,7 +266,7 @@ console.log(
 );
 console.log(`\n# Create a student`);
 console.log(
-  `curl -X POST '${url}' -H 'Content-Type: application/json' -H 'x-apollo-operation-name: school' -d '{"query":"mutation{createStudent(values:{name:\\"Diana\\",sex:GIRL,classIdentity:1}){identity,name}}"}'`,
+  `curl -X POST '${url}' -H 'Content-Type: application/json' -H 'x-apollo-operation-name: school' -d '{"query":"mutation{createStudent(value:{name:\\"Diana\\",sex:GIRL,classIdentity:1}){identity,name}}"}'`,
 );
 console.log(`\n# Query students with jsonb extra field`);
 console.log(

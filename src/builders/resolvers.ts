@@ -502,7 +502,7 @@ function makeCreateSingle(
   const target = meta.target;
   return {
     type: singleType,
-    args: { values: { type: new GraphQLNonNull(insertInput) } },
+    args: { value: { type: new GraphQLNonNull(insertInput) } },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
     resolve: async (_source: any, args: any) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
@@ -510,7 +510,7 @@ function makeCreateSingle(
 
       const mapped = remapFromGraphQLSingleInput(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL input is dynamic
-        args['values'] as any,
+        args['value'] as any,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- EntityMetadata column type
         columns as any,
       );
