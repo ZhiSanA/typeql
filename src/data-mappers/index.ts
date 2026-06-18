@@ -18,9 +18,6 @@ export const remapToGraphQLCore = (value: unknown): unknown => {
   if (value instanceof Uint8Array) {
     return Buffer.from(value).toString('base64');
   }
-  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-    return value;
-  }
   return value;
 };
 

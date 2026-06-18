@@ -127,6 +127,9 @@ class Student {
   @Column('datetime', { nullable: true })
   bornAt?: Date;
 
+  @Column('jsonb', { nullable: true })
+  extra?: unknown;
+
   @Column('integer', { nullable: true })
   classIdentity?: number;
 
@@ -189,8 +192,18 @@ const classB = await classRepository.save({
 });
 
 await studentRepository.save([
-  { name: 'Alice', sex: StudentSex.GIRL, class: classA },
-  { name: 'Bob', sex: StudentSex.BOY, class: classA },
+  {
+    name: 'Alice',
+    sex: StudentSex.GIRL,
+    class: classA,
+    extra: { hobby: 'reading', age: 10 },
+  },
+  {
+    name: 'Bob',
+    sex: StudentSex.BOY,
+    class: classA,
+    extra: { hobby: 'sports', scores: [95, 87, 92] },
+  },
   {
     name: 'Charlie',
     sex: StudentSex.BOY,
@@ -254,4 +267,8 @@ console.log(
 console.log(`\n# Create a student`);
 console.log(
   `curl -X POST '${url}' -H 'Content-Type: application/json' -H 'x-apollo-operation-name: school' -d '{"query":"mutation{createStudent(values:{name:\\"Diana\\",sex:GIRL,classIdentity:1}){identity,name}}"}'`,
+);
+console.log(`\n# Query students with jsonb extra field`);
+console.log(
+  `curl -X POST '${url}' -H 'Content-Type: application/json' -H 'x-apollo-operation-name: school' -d '{"query":"{students{identity,name,extra}}"}'`,
 );

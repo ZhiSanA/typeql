@@ -8,7 +8,7 @@ import {
   GraphQLScalarType,
   GraphQLString,
 } from 'graphql';
-import { GraphQLDate, GraphQLDateTime } from 'graphql-scalars';
+import { GraphQLDate, GraphQLDateTime, GraphQLJSON } from 'graphql-scalars';
 import { capitalize } from '../case-ops/index.ts';
 import type { ConvertedColumn } from './types.ts';
 
@@ -117,7 +117,7 @@ function resolveScalarType(
     return { type: GraphQLString, description: 'Time' };
   }
   if (['json', 'jsonb', 'simple-json'].includes(typeStr)) {
-    return { type: GraphQLString, description: 'JSON' };
+    return { type: GraphQLJSON, description: 'JSON' };
   }
   if (['uuid'].includes(typeStr)) {
     return { type: GraphQLString, description: 'UUID' };
