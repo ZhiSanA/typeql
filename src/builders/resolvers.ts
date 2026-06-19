@@ -208,7 +208,7 @@ function convertOrderBy(
   if (entries.length === 0) return undefined;
   const result: Record<string, 'ASC' | 'DESC'> = {};
   for (const [key, val] of entries)
-    result[key] = val!.direction === 'desc' ? 'DESC' : 'ASC';
+    result[key] = val!.direction === 'DESC' ? 'DESC' : 'ASC';
   return result;
 }
 
