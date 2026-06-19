@@ -147,7 +147,7 @@ const dataSource = new DataSource({
   database: ':memory:',
   entities: [User, Post, Class, Student],
   synchronize: true,
-  logging: false,
+  logging: true,
 });
 
 await dataSource.initialize();
@@ -230,7 +230,7 @@ console.log('📋 Mutations:', Object.keys(entities.mutations).join(', '));
 const server = new ApolloServer({ schema });
 
 const { url } = await startStandaloneServer(server, {
-  listen: { port: 1216 },
+  listen: { host: '127.0.0.1', port: 1216 },
 });
 
 console.log(`\n🚀 Server ready at ${url}\n`);
