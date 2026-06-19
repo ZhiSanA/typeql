@@ -1,5 +1,17 @@
 # @jishu.xin/typeql 变更记录
 
+## 2026-06-17-004 — 修复 orderBy direction 大小写不匹配
+
+### 修复
+
+- `convertOrderBy()` 中比较 `'desc'` 小写字符串，但 GraphQL 枚举值为大写 `"DESC"`/`"ASC"`，导致所有排序请求实际都用了 ASC，DESC 不生效
+
+### 变更
+
+- `src/builders/resolvers.ts`：`val!.direction === 'desc'` → `val!.direction === 'DESC'`
+
+---
+
 ## 2026-06-17-003 — 列表查询返回分页信息 (rows + pagination)
 
 ### 不兼容变更
