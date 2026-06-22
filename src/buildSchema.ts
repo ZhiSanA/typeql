@@ -72,6 +72,8 @@ export const buildSchema = (
     config.maxRelationDepth ?? 2,
   );
 
+  const { softDelete = true } = config;
+
   // Generate resolvers
   const { queries, mutations, fieldResolvers } = generateResolvers(
     dataSource,
@@ -79,6 +81,7 @@ export const buildSchema = (
     relationMap,
     typeNameMapper,
     typeOutputs,
+    softDelete,
   );
 
   // Build schema

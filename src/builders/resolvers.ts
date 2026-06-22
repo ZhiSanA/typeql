@@ -10,6 +10,7 @@ import {
   Not,
 } from 'typeorm';
 import {
+  GraphQLBoolean,
   GraphQLInputObjectType,
   GraphQLInt,
   GraphQLList,
@@ -24,10 +25,11 @@ import {
   remapToGraphQLSingleOutput,
 } from '../data-mappers/index.ts';
 import {
-  type RelationMap,
-  generateTypes,
-  registerFieldResolver,
   deleteResultType,
+  generateTypes,
+  hasSoftDeleteColumn,
+  registerFieldResolver,
+  type RelationMap,
 } from './common.ts';
 import { resolveNames, type TypeNameMapper } from './names.ts';
 
@@ -222,6 +224,7 @@ export function generateResolvers(
   relationMap: RelationMap,
   typeNameMapper: TypeNameMapper,
   typeOutputs: ReturnType<typeof generateTypes>,
+  softDelete = true,
 ): {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config map
   queries: Record<string, any>;
@@ -270,6 +273,8 @@ export function generateResolvers(
       | undefined;
     const columns = meta.ownColumns;
 
+    const supportsSoftDelete = softDelete && hasSoftDeleteColumn(meta);
+
     // ── List ──
     queries[names.listFieldName] = makeList(
       dataSource,
@@ -279,6 +284,7 @@ export function generateResolvers(
       orderInput,
       columns,
       relationMap,
+      supportsSoftDelete,
     );
 
     // ── Single ──
@@ -290,6 +296,7 @@ export function generateResolvers(
       orderInput,
       columns,
       relationMap,
+      supportsSoftDelete,
     );
 
     // ── Create ──
@@ -323,7 +330,7 @@ export function generateResolvers(
       );
     }
 
-    // ── Delete ──
+    // ── Delete (always hard delete) ──
     mutations[names.deleteFieldName] = makeDelete(
       dataSource,
       meta,
@@ -332,6 +339,26 @@ export function generateResolvers(
       columns,
       relationMap,
     );
+
+    // ── Soft delete & Restore (soft delete only) ──
+    if (supportsSoftDelete) {
+      mutations[names.softDeleteFieldName] = makeSoftDelete(
+        dataSource,
+        meta,
+        filterInput,
+        listType,
+        columns,
+        relationMap,
+      );
+      mutations[names.restoreFieldName] = makeRestore(
+        dataSource,
+        meta,
+        filterInput,
+        listType,
+        columns,
+        relationMap,
+      );
+    }
   }
 
   // Field resolvers for relations
@@ -365,6 +392,7 @@ function filterArgs(
   orderInput?: GraphQLInputObjectType,
   extraOffset = true,
   extraLimit = false,
+  withDeleted = false,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL arg config map
 ): Record<string, any> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL arg config map
@@ -373,6 +401,7 @@ function filterArgs(
   if (orderInput) resultArgs['orderBy'] = { type: orderInput };
   if (extraOffset) resultArgs['offset'] = { type: GraphQLInt };
   if (extraLimit) resultArgs['limit'] = { type: GraphQLInt };
+  if (withDeleted) resultArgs['withDeleted'] = { type: GraphQLBoolean };
   return resultArgs;
 }
 
@@ -385,18 +414,20 @@ function makeList(
   orderInput?: GraphQLInputObjectType,
   columns?: EntityMetadata['ownColumns'],
   relationMap?: RelationMap,
+  withDeleted = false,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config return type
 ): any {
   const target = meta.target;
   return {
     type: resultType,
-    args: filterArgs(filterInput, orderInput, true, true),
+    args: filterArgs(filterInput, orderInput, true, true, withDeleted),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
     resolve: async (_source: any, args: any) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
       const repository = dataSource.getRepository(target as any);
       const resolved = resolveWhere(args['where'], meta, relationMap!);
-      const [records, count] = await repository.findAndCount({
+
+      const findOptions: Record<string, unknown> = {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
         where: resolved.where as any,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsRelations
@@ -405,8 +436,12 @@ function makeList(
         order: convertOrderBy(args['orderBy']) as any,
         skip: args['offset'] ?? undefined,
         take: args['limit'] ?? undefined,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindManyOptions is generic
-      } as any);
+      };
+      if (withDeleted && args['withDeleted']) {
+        findOptions['withDeleted'] = true;
+      }
+
+      const [records, count] = await repository.findAndCount(findOptions as any);
       return {
         rows: remapToGraphQLArrayOutput(records as any),
         pagination: {
@@ -427,26 +462,32 @@ function makeSingle(
   orderInput?: GraphQLInputObjectType,
   columns?: EntityMetadata['ownColumns'],
   relationMap?: RelationMap,
+  withDeleted = false,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config return type
 ): any {
   const target = meta.target;
   return {
     type: singleType,
-    args: filterArgs(filterInput, orderInput, true, false),
+    args: filterArgs(filterInput, orderInput, true, false, withDeleted),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
     resolve: async (_source: any, args: any) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
       const repository = dataSource.getRepository(target as any);
       const resolved = resolveWhere(args['where'], meta, relationMap!);
-      const result = await repository.findOne({
+
+      const findOptions: Record<string, unknown> = {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
         where: resolved.where as any,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsRelations
         relations: buildRelationObject(resolved.relations) as any,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM order
         order: convertOrderBy(args['orderBy']) as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOneOptions is generic
-      } as any);
+      };
+      if (withDeleted && args['withDeleted']) {
+        findOptions['withDeleted'] = true;
+      }
+
+      const result = await repository.findOne(findOptions as any);
       if (!result) return null;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity type is generic
       return remapToGraphQLSingleOutput(result as any);
@@ -579,7 +620,42 @@ function makeDelete(
   filterInput: GraphQLInputObjectType | undefined,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL type is a GraphQL type, not any specific class
   _listType: any,
-  columns: EntityMetadata['ownColumns'],
+  _columns: EntityMetadata['ownColumns'],
+  relationMap: RelationMap,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config return type
+): any {
+  const target = meta.target;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL arg config map
+  const args: Record<string, any> = {};
+  if (filterInput) args['where'] = { type: filterInput };
+  return {
+    type: deleteResultType,
+    args,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
+    resolve: async (_source: any, args: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
+      const repository = dataSource.getRepository(target as any);
+      const resolved = resolveWhere(args['where'], meta, relationMap);
+      if (!resolved.where) return { affected: 0, raw: [] };
+      // Hard delete
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
+      const result = await repository.delete(resolved.where as any);
+      return {
+        affected: result.affected ?? 0,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM delete result is generic
+        raw: (result.raw ?? []).map((row: any) => String(row)),
+      };
+    },
+  };
+}
+
+function makeSoftDelete(
+  dataSource: DataSource,
+  meta: EntityMetadata,
+  filterInput: GraphQLInputObjectType | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL type is a GraphQL type, not any specific class
+  _listType: any,
+  _columns: EntityMetadata['ownColumns'],
   relationMap: RelationMap,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config return type
 ): any {
@@ -597,12 +673,47 @@ function makeDelete(
       const resolved = resolveWhere(args['where'], meta, relationMap);
       if (!resolved.where) return { affected: 0, raw: [] };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
-      const result = await repository.delete(resolved.where as any);
+      const result = await repository.softDelete(resolved.where as any);
       return {
         affected: result.affected ?? 0,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM delete result is generic
         raw: (result.raw ?? []).map((row: any) => String(row)),
       };
+    },
+  };
+}
+
+function makeRestore(
+  dataSource: DataSource,
+  meta: EntityMetadata,
+  filterInput: GraphQLInputObjectType | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL type is a GraphQL type, not any specific class
+  _listType: any,
+  _columns: EntityMetadata['ownColumns'],
+  relationMap: RelationMap,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL field config return type
+): any {
+  const target = meta.target;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL arg config map
+  const args: Record<string, any> = {};
+  if (filterInput) args['where'] = { type: filterInput };
+  return {
+    type: new GraphQLObjectType({
+      name: `Restore${meta.targetName}Result`,
+      fields: {
+        affected: { type: new GraphQLNonNull(GraphQLInt) },
+      },
+    }),
+    args,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GraphQL resolver function signature
+    resolve: async (_source: any, args: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM entity constructor
+      const repository = dataSource.getRepository(target as any);
+      const resolved = resolveWhere(args['where'], meta, relationMap);
+      if (!resolved.where) return { affected: 0 };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TypeORM FindOptionsWhere values
+      const result = await repository.restore(resolved.where as any);
+      return { affected: result.affected ?? 0 };
     },
   };
 }

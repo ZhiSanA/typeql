@@ -275,6 +275,10 @@ export const deleteResultType = new GraphQLObjectType({
   },
 });
 
+export function hasSoftDeleteColumn(meta: EntityMetadata): boolean {
+  return meta.columns.some((col) => col.isDeleteDate);
+}
+
 // ──────────────────────────────────────────────
 // Type cache — one GraphQLObjectType per typeName
 // Fields are deferred via thunks, so circular refs work.

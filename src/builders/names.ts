@@ -12,6 +12,8 @@ export interface ResolvedNames {
   createSingleFieldName: string;
   updateFieldName: string;
   deleteFieldName: string;
+  softDeleteFieldName: string;
+  restoreFieldName: string;
 }
 
 export function resolveNames(
@@ -28,6 +30,8 @@ export function resolveNames(
   const createSingleFieldName = `create${mapped ? capitalize(mapped.singular) : capitalize(entityName)}`;
   const updateFieldName = `update${mapped ? capitalize(mapped.singular) : capitalize(entityName)}`;
   const deleteFieldName = `delete${mapped ? capitalize(mapped.singular) : capitalize(entityName)}`;
+  const softDeleteFieldName = `softDelete${mapped ? capitalize(mapped.singular) : capitalize(entityName)}`;
+  const restoreFieldName = `restore${mapped ? capitalize(mapped.singular) : capitalize(entityName)}`;
 
   return {
     typeName,
@@ -37,5 +41,7 @@ export function resolveNames(
     createSingleFieldName,
     updateFieldName,
     deleteFieldName,
+    softDeleteFieldName,
+    restoreFieldName,
   };
 }

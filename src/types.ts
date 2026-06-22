@@ -75,16 +75,17 @@ export interface BuildSchemaConfig {
    * Set to 0 to disable nested relation filtering entirely.
    */
   maxRelationDepth?: number;
+
+  /**
+   * Whether to enable soft delete support.
+   * When true (default), entities with a @DeleteDateColumn will automatically
+   * get soft-delete and restore mutations. The delete mutation will expose
+   * a `mode` argument (SOFT/HARD) so callers can choose.
+   * Set to false to disable soft delete detection entirely.
+   */
+  softDelete?: boolean;
 }
 
 // ──────────────────────────────────────────────
 // Resolver type helpers (public)
 // ──────────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- filter values vary by field type
-export type Filters = Record<string, any>;
-
-export type OrderByArgs = Record<
-  string,
-  { direction: 'asc' | 'desc'; priority: number }
->;

@@ -131,7 +131,9 @@ mutation {
 | 批量创建 | `createUsers`  | 一次创建多条记录                              |
 | 单条创建 | `createUser`   | 创建单条记录                                  |
 | 更新     | `updateUser`   | 按条件批量更新                                |
-| 删除     | `deleteUser`   | 按条件批量删除，返回 `DeleteResult`           |
+| 删除     | `deleteUser`   | 按条件批量物理删除，返回 `DeleteResult`       |
+| 软删除   | `softDeleteUser` | 按条件批量软删除（设 `deletedAt`），仅实体有 `@DeleteDateColumn` 时生成 |
+| 恢复     | `restoreUser`  | 恢复被软删除的记录，仅实体有 `@DeleteDateColumn` 时生成 |
 
 > **列表查询**的返回类型为 `{TypeName}ListResult`，包含 `rows: [Type]!`（数据列表）和 `pagination: Pagination!`（分页信息）。`Pagination` 包含 `limit`、`offset`（实际传入的参数）和 `count`（符合条件的总记录数）。
 
@@ -240,7 +242,47 @@ query {
 
 排序字段的 `priority` 决定排序优先级（数值越大优先级越高）。
 
-### 5. N+1 查询优化
+### 5. 软删除支持
+
+实体标注 `@DeleteDateColumn()` 后，自动生成独立的软删除和恢复接口，方便权限控制：
+
+```graphql
+# 软删除（设置 deletedAt，不再出现在普通查询中）
+mutation {
+  softDeleteUser(where: { id: { eq: 1 } }) {
+    affected
+  }
+}
+
+# 查询软删记录（withDeleted: true 时包含已删记录）
+query {
+  users(withDeleted: true) {
+    rows { id name deletedAt }
+  }
+}
+
+# 恢复软删记录
+mutation {
+  restoreUser(where: { id: { eq: 1 } }) {
+    affected
+  }
+}
+
+# 物理删除（独立接口，可单独控制权限）
+mutation {
+  deleteUser(where: { id: { eq: 1 } }) {
+    affected
+  }
+}
+```
+
+可通过配置全局关闭：
+
+```typescript
+buildSchema(dataSource, { softDelete: false });
+```
+
+### 6. N+1 查询优化
 
 内置批处理加载器（Batch Loader），在单个请求上下文中自动合并重复的数据加载请求，有效防止 N+1 问题。
 

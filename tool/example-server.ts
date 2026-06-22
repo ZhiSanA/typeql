@@ -6,6 +6,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
   OneToMany,
   ManyToOne,
   JoinColumn,
@@ -31,6 +32,9 @@ class User {
 
   @CreateDateColumn()
   createdAt!: Date;
+
+  @DeleteDateColumn()
+  deletedAt?: Date;
 
   @OneToMany(() => Post, (post) => post.author)
   posts!: Post[];
@@ -220,8 +224,9 @@ console.log(`✅ School: seeded 2 classes, 3 students`);
 
 const { schema, entities } = buildSchema(dataSource);
 
-console.log('\n📋 Queries:', Object.keys(entities.queries).join(', '));
+console.log('📋 Queries:', Object.keys(entities.queries).join(', '));
 console.log('📋 Mutations:', Object.keys(entities.mutations).join(', '));
+console.log('🔹 User has @DeleteDateColumn — deleteUser supports mode: SOFT/HARD + restoreUser available');
 
 // ═══════════════════════════════════════
 // Apollo Server
@@ -271,4 +276,28 @@ console.log(
 console.log(`\n# Query students with jsonb extra field`);
 console.log(
   `curl -X POST '${url}' -H 'Content-Type: application/json' -H 'x-apollo-operation-name: school' -d '{"query":"{students{identity,name,extra}}"}'`,
+);
+
+// ── Soft-delete demo ──
+
+console.log('\n── Soft-delete demos (User has @DeleteDateColumn) ──\n');
+console.log('# 1. Soft-delete user');
+console.log(
+  `curl -X POST '${url}' -H 'Content-Type: application/json' -d '{"query":"mutation{softDeleteUser(where:{id:{eq:1}}){affected}}"}'`,
+);
+console.log(`\n# 2. Query without withDeleted — user is hidden`);
+console.log(
+  `curl -X POST '${url}' -H 'Content-Type: application/json' -d '{"query":"{users{rows{id,name}}}"}'`,
+);
+console.log(`\n# 3. Query with withDeleted — user appears`);
+console.log(
+  `curl -X POST '${url}' -H 'Content-Type: application/json' -d '{"query":"{users(withDeleted:true){rows{id,name,deletedAt}}}"}'`,
+);
+console.log(`\n# 4. Restore user`);
+console.log(
+  `curl -X POST '${url}' -H 'Content-Type: application/json' -d '{"query":"mutation{restoreUser(where:{id:{eq:1}}){affected}}"}'`,
+);
+console.log(`\n# 5. Hard-delete user`);
+console.log(
+  `curl -X POST '${url}' -H 'Content-Type: application/json' -d '{"query":"mutation{deleteUser(where:{id:{eq:1}}){affected}}"}'`,
 );
